@@ -83,6 +83,7 @@ const LocalAxes: React.FC<{ length?: number }> = ({ length = 5 }) => {
 const GeometricHorizonReference: React.FC<{ radius?: number }> = ({
   radius = 6,
 }) => {
+  // Tangent plane (y = 0) represents 0.0° geometric horizon before physical DEM ray-tracing.
   return (
     <group rotation={[-Math.PI / 2, 0, 0]} data-testid="horizon-reference">
       {/* Outer horizon ring */}
