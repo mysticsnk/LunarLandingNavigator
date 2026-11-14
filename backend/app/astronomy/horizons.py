@@ -370,6 +370,12 @@ class HorizonsProvider:
         observations, provider_name, ephem_source = parse_horizons_response(body_json)
 
         first_obs = observations[0]
+        expected_ts = dt_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+        if first_obs["timestamp"] != expected_ts:
+            raise HorizonsParseError(
+                f"Horizons returned timestamp '{first_obs['timestamp']}', expected '{expected_ts}'"
+            )
+
         if target.lower() in ("sun", "10"):
             canonical_target = "Sun"
         elif target.lower() in ("earth", "399"):
