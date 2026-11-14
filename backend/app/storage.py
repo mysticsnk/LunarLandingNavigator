@@ -28,9 +28,10 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from app.astronomy import normalize_longitude
 from app.core.database import get_engine
 from app.core.problems import APIProblem
-from app.requests import CatalogSite, NowRequest, canonical_time
+from app.requests import CatalogSite, NowRequest, TimelineRequest, canonical_time
 
 MODEL_VERSION = "geometric-now-v1"
+TIMELINE_MODEL_VERSION = "geometric-timeline-v1"
 metadata = MetaData()
 json_type = JSON().with_variant(JSONB(), "postgresql")
 sites = Table(
@@ -68,7 +69,7 @@ jobs = Table(
     Column("lease_expires_at", DateTime(timezone=True)),
     Column("attempts", Integer, nullable=False),
     Column("result_expires_at", DateTime(timezone=True)),
-    CheckConstraint("kind = 'now'"),
+    CheckConstraint("kind IN ('now','timeline')", name="ck_observation_jobs_kind"),
     CheckConstraint("status IN ('queued','running','succeeded','failed')"),
 )
 Index("ix_jobs_queue", jobs.c.status, jobs.c.created_at)
@@ -104,16 +105,24 @@ def iso(value):
 
 
 def request_key(normalized):
+    kind = normalized.get("kind", "now")
+    request_fields = (
+        ("start_time", "duration_days", "step_minutes") if kind == "timeline" else ("target_time",)
+    )
     scientific = {
-        key: normalized[key]
-        for key in (
-            "target_time",
-            "observer_height_m",
-            "visibility_margin_deg",
-            "horizon_mode",
-            "model_version",
-        )
+        **{
+            key: normalized[key]
+            for key in (
+                *request_fields,
+                "observer_height_m",
+                "visibility_margin_deg",
+                "horizon_mode",
+                "model_version",
+            )
+        },
     }
+    if kind != "now":
+        scientific["kind"] = kind
     scientific.update(
         {key: normalized["site"][key] for key in ("latitude", "longitude", "surface_elevation_m")}
     )
@@ -152,12 +161,12 @@ class Repository:
             "offset": offset,
         }
 
-    def resolve(self, request: NowRequest, submitted=None):
+    def resolve(self, request: NowRequest | TimelineRequest, submitted=None):
         if request.horizon_mode != "geometric":
             raise APIProblem(
                 422,
                 "TERRAIN_UNAVAILABLE",
-                "Terrain mode is unavailable in Stage 1",
+                "Terrain mode is unavailable in Stage 3",
                 [
                     {"field": "horizon_mode", "reason": "no_data"},
                 ],
@@ -174,7 +183,22 @@ class Repository:
         site["longitude"] = normalize_longitude(float(site["longitude"]))
         # Geometric height is relative to Horizons' reference surface, not a measured DEM.
         site.update(surface_elevation_m=0.0, observer_height_m=request.observer_height_m)
+        if isinstance(request, TimelineRequest):
+            start_time = canonical_time(iso(request.start_time))
+            return {
+                "kind": "timeline",
+                "site": site,
+                "start_time": start_time,
+                "end_time": iso(request.start_time + timedelta(days=request.duration_days)),
+                "duration_days": request.duration_days,
+                "step_minutes": request.step_minutes,
+                "observer_height_m": request.observer_height_m,
+                "visibility_margin_deg": request.visibility_margin_deg,
+                "horizon_mode": request.horizon_mode,
+                "model_version": TIMELINE_MODEL_VERSION,
+            }
         return {
+            "kind": "now",
             "site": site,
             "target_time": canonical_time(
                 submitted["target_time"] if submitted else iso(request.target_time)
@@ -187,12 +211,13 @@ class Repository:
 
     def submit(self, request, request_id, submitted=None):
         normalized = self.resolve(request, submitted)
+        kind = normalized["kind"]
         job_id = str(uuid4())
         with self.engine.begin() as conn:
             conn.execute(
                 insert(jobs).values(
                     id=job_id,
-                    kind="now",
+                    kind=kind,
                     status="queued",
                     request_id=request_id,
                     submitted=submitted
@@ -206,7 +231,7 @@ class Repository:
             )
         return {
             "job_id": job_id,
-            "kind": "now",
+            "kind": kind,
             "status": "queued",
             "status_url": f"/api/v1/jobs/{job_id}",
             "result_url": f"/api/v1/jobs/{job_id}/result",

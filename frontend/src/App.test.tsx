@@ -18,6 +18,8 @@ import {
   observationResult,
   resources,
   succeeded,
+  timelineAccepted,
+  timelineResult,
 } from './test/fixtures'
 import type { LunarMapProps } from './features/map'
 import type { LunarSceneProps } from './features/scene'
@@ -60,6 +62,11 @@ beforeEach(() => {
   vi.spyOn(apiClient, 'submitNow').mockResolvedValue(accepted)
   vi.spyOn(apiClient, 'getJob').mockResolvedValue(succeeded)
   vi.spyOn(apiClient, 'getResult').mockResolvedValue(observationResult)
+  vi.spyOn(apiClient, 'submitTimeline').mockResolvedValue(timelineAccepted)
+  vi.spyOn(apiClient, 'getTimelineResult').mockResolvedValue({
+    ...timelineResult,
+    summary: { ...timelineResult.summary, next_sunset_at: null, next_earthset_at: null },
+  })
 })
 afterEach(() => {
   cleanup()
@@ -79,7 +86,7 @@ async function selectCatalog() {
   })
 }
 
-describe('Stage 1 observation workspace', () => {
+describe('Stage 3 observation workspace', () => {
   it('does not replace a failed layer catalog with static operational imagery', async () => {
     vi.mocked(apiClient.getMapLayers)
       .mockRejectedValueOnce(
@@ -103,7 +110,7 @@ describe('Stage 1 observation workspace', () => {
     expect(screen.getByTestId('app-title')).toHaveTextContent(
       'Lunar Landing Site Navigator',
     )
-    expect(screen.getByText('Stage 1')).toBeInTheDocument()
+    expect(screen.getByText('Stage 3')).toBeInTheDocument()
     expect(screen.getByText(/Sun visibility: Unknown/)).toBeInTheDocument()
     expect(
       screen.getByText('Simultaneous availability: Unknown'),
@@ -142,6 +149,49 @@ describe('Stage 1 observation workspace', () => {
     expect(
       await screen.findByText('Queued — waiting for the worker'),
     ).toBeInTheDocument()
+  })
+  it('loads timeline intervals and drives the scene from the selected returned sample', async () => {
+    vi.mocked(apiClient.getJob).mockResolvedValue({
+      ...succeeded,
+      kind: 'timeline',
+    })
+    render(<App />)
+    await selectCatalog()
+    vi.useFakeTimers()
+    fireEvent.click(screen.getByRole('radio', { name: 'Timeline' }))
+    fireEvent.change(screen.getByLabelText('Duration (days)'), {
+      target: { value: '14' },
+    })
+    fireEvent.change(screen.getByLabelText('Time step (minutes)'), {
+      target: { value: '120' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Request timeline' }))
+    expect(apiClient.submitTimeline).toHaveBeenCalledWith(
+      {
+        site: { site_id: 'development-site' },
+        start_time: '2027-07-15T00:00:00Z',
+        duration_days: 14,
+        step_minutes: 120,
+        horizon_mode: 'geometric',
+        observer_height_m: 2,
+        visibility_margin_deg: 0,
+      },
+      expect.any(Object),
+    )
+    await act(async () => vi.advanceTimersByTimeAsync(2000))
+    expect(screen.getByText('4 returned samples · 360-minute resolution · geometric horizon')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Result provenance'))
+    const provenance = screen.getByText('Result provenance').parentElement!
+    expect(within(provenance).getByText('development-fixture-v1')).toBeInTheDocument()
+    expect(within(provenance).getByText('2027-07-15T00:00:00Z')).toBeInTheDocument()
+    expect(screen.getAllByText(/Window 1/)).toHaveLength(3)
+    expect(screen.getByText('Continues through period end (clipped)')).toBeInTheDocument()
+    expect(screen.getAllByText(/No set event observed in this computed period\./)).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: 'Next sample' }))
+    expect(screen.getByText('2027-07-15T06:00:00Z (UTC)')).toBeInTheDocument()
+    expect(visual.scene.mock.lastCall![0].observationPoint).toEqual(timelineResult.points[1])
+    expect(apiClient.submitTimeline).toHaveBeenCalledTimes(1)
+    expect(apiClient.submitNow).not.toHaveBeenCalled()
   })
   it('submits custom coordinates without a catalog ID and never clamps invalid latitude', async () => {
     render(<App />)

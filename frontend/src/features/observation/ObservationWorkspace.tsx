@@ -6,8 +6,16 @@ import { SourceLink } from '../../components/SourceLink'
 import { RequestError } from '../../components/RequestError'
 import { LunarMap } from '../map'
 import { LunarScene } from '../scene'
-import { buildRequest, initialScenario, type ScenarioDraft } from './scenario'
+import {
+  buildRequest,
+  buildTimelineRequest,
+  initialScenario,
+  type ScenarioDraft,
+} from './scenario'
 import { useObservation } from './useObservation'
+import { useTimeline } from './useTimeline'
+import { useTimelinePlayback } from './useTimelinePlayback'
+import { TimelineAnalytics } from './TimelineAnalytics'
 import { ObservationResult } from './ObservationResult'
 import { CSAResources } from '../resources/CSAResources'
 import { HealthCard } from '../health/HealthCard'
@@ -25,6 +33,7 @@ const phases = {
 
 export function ObservationWorkspace() {
   const [draft, setDraft] = useState(initialScenario)
+  const [workflow, setWorkflow] = useState<'now' | 'timeline'>('now')
   const [category, setCategory] = useState<Site['category'] | ''>('')
   const [offset, setOffset] = useState(0)
   const [catalog, setCatalog] = useState<SiteList | null>(null)
@@ -32,6 +41,8 @@ export function ObservationWorkspace() {
   const [attempt, setAttempt] = useState(0)
   const [validation, setValidation] = useState<string | null>(null)
   const observation = useObservation()
+  const timeline = useTimeline()
+  const playback = useTimelinePlayback(timeline.result)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -87,27 +98,46 @@ export function ObservationWorkspace() {
 
   function change(patch: Partial<ScenarioDraft>) {
     observation.reset()
+    timeline.reset()
     setValidation(null)
     setDraft((previous) => ({ ...previous, ...patch }))
   }
+
+  function selectWorkflow(next: 'now' | 'timeline') {
+    observation.reset()
+    timeline.reset()
+    setValidation(null)
+    setWorkflow(next)
+  }
+
   function submit(event: FormEvent) {
     event.preventDefault()
     try {
-      const request = buildRequest(draft)
       setValidation(null)
-      void observation.submit(request)
+      if (workflow === 'timeline')
+        void timeline.submit(buildTimelineRequest(draft))
+      else void observation.submit(buildRequest(draft))
     } catch (error) {
       observation.reset()
+      timeline.reset()
       setValidation((error as Error).message)
     }
   }
 
   const result = observation.result
+  const timelineResult = timeline.result
+  const selectedPoint =
+    workflow === 'timeline'
+      ? timelineResult?.points[playback.activeIndex] ?? null
+      : result?.point ?? null
+  const activeJob = workflow === 'timeline' ? timeline : observation
+  const busy = activeJob.busy
   const latitude = Number(draft.latitude)
   const longitude = Number(draft.longitude)
   // The map owns coordinate transformations; wait for server normalization outside its accepted longitude range.
-  const coordinate = result
-    ? { latitude: result.site.latitude, longitude: result.site.longitude }
+  const displayedSite = workflow === 'timeline' ? timelineResult?.site : result?.site
+  const coordinate = displayedSite
+    ? { latitude: displayedSite.latitude, longitude: displayedSite.longitude }
     : draft.mode === 'catalog'
       ? draft.site
       : draft.latitude.trim() &&
@@ -124,11 +154,10 @@ export function ObservationWorkspace() {
   return (
     <main className="app-main">
       <div className="workspace-intro">
-        <p className="eyebrow">SINGLE-TIME OBSERVATION</p>
+        <p className="eyebrow">{workflow === 'timeline' ? 'MULTI-DAY TIMELINE' : 'SINGLE-TIME OBSERVATION'}</p>
         <h2>Explore a lunar vantage point</h2>
         <p className="muted">
-          Choose a location and a UTC instant to inspect geometric Sun and Earth
-          visibility.
+          Choose a location and a UTC {workflow === 'timeline' ? 'period' : 'instant'} to inspect geometric Sun and Earth visibility.
         </p>
       </div>
       <div className="main-grid">
@@ -139,6 +168,29 @@ export function ObservationWorkspace() {
           >
             <h2 id="scenario-heading">Observation setup</h2>
             <form onSubmit={submit} noValidate>
+              <fieldset>
+                <legend>Analysis</legend>
+                <div className="mode-switch">
+                  <label>
+                    <input
+                      type="radio"
+                      name="analysis-mode"
+                      checked={workflow === 'now'}
+                      onChange={() => selectWorkflow('now')}
+                    />{' '}
+                    Single instant
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="analysis-mode"
+                      checked={workflow === 'timeline'}
+                      onChange={() => selectWorkflow('timeline')}
+                    />{' '}
+                    Timeline
+                  </label>
+                </div>
+              </fieldset>
               <fieldset>
                 <legend>Location</legend>
                 <div className="mode-switch">
@@ -325,7 +377,7 @@ export function ObservationWorkspace() {
               <fieldset>
                 <legend>Time & model</legend>
                 <label className="field">
-                  Observation date and time (UTC)
+                  {workflow === 'timeline' ? 'Period start (UTC)' : 'Observation date and time (UTC)'}
                   <input
                     type="datetime-local"
                     step="1"
@@ -338,9 +390,34 @@ export function ObservationWorkspace() {
                   />
                 </label>
                 <p className="field-help">
-                  Enter UTC explicitly, regardless of your device time zone.
-                  Supported years: 2000–2049; whole seconds.
+                  Enter UTC explicitly, regardless of your device time zone. Supported years: 2000–2049; whole seconds.
                 </p>
+                {workflow === 'timeline' && (
+                  <div className="field-pair">
+                    <label className="field">
+                      Duration (days)
+                      <input
+                        type="number"
+                        min="1"
+                        max="30"
+                        step="1"
+                        value={draft.durationDays}
+                        onChange={(event) => change({ durationDays: event.target.value })}
+                      />
+                    </label>
+                    <label className="field">
+                      Time step (minutes)
+                      <select
+                        value={draft.stepMinutes}
+                        onChange={(event) => change({ stepMinutes: event.target.value })}
+                      >
+                        {[15, 30, 60, 120, 180, 360].map((step) => (
+                          <option key={step} value={step}>{step}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                )}
                 <div className="field-pair">
                   <label className="field">
                     Observer height (m)
@@ -370,7 +447,7 @@ export function ObservationWorkspace() {
                   </label>
                 </div>
                 <p className="field-help">
-                  Geometric horizon · terrain occlusion is outside Stage 2.
+                  Geometric horizon · terrain occlusion is unavailable in Stage 3.
                 </p>
               </fieldset>
               {validation && (
@@ -379,23 +456,34 @@ export function ObservationWorkspace() {
                 </p>
               )}
               <button className="primary-button" type="submit">
-                {observation.busy
-                  ? 'Replace with new observation'
-                  : 'Request observation'}
+                {busy
+                  ? workflow === 'timeline' ? 'Replace with new timeline' : 'Replace with new observation'
+                  : workflow === 'timeline' ? 'Request timeline' : 'Request observation'}
               </button>
             </form>
             <div className="job-progress" role="status" aria-live="polite">
               <span
                 className={
-                  observation.busy ? 'progress-dot active' : 'progress-dot'
+                  busy ? 'progress-dot active' : 'progress-dot'
                 }
               />
-              {phases[observation.phase]}
+              {workflow === 'timeline'
+                ? {
+                    idle: 'No timeline requested',
+                    submitting: 'Submitting timeline…',
+                    queued: 'Queued — waiting for the worker',
+                    running: 'Running — calculating timeline',
+                    'loading-result': 'Loading timeline result…',
+                    succeeded: 'Timeline ready',
+                    failed: 'Timeline failed',
+                    error: 'Timeline request could not be completed',
+                  }[timeline.phase]
+                : phases[observation.phase]}
             </div>
-            {observation.jobId && (
-              <p className="job-id">Job {observation.jobId}</p>
+            {activeJob.jobId && (
+              <p className="job-id">Job {activeJob.jobId}</p>
             )}
-            {observation.busy && (
+            {busy && (
               <>
                 <p className="field-help">
                   Checking job status every two seconds. Stopping here leaves
@@ -404,13 +492,13 @@ export function ObservationWorkspace() {
                 <button
                   type="button"
                   className="secondary-button"
-                  onClick={observation.reset}
+                  onClick={activeJob.reset}
                 >
                   Stop waiting
                 </button>
               </>
             )}
-            {observation.error && <RequestError error={observation.error} />}
+            {activeJob.error && <RequestError error={activeJob.error} />}
           </section>
           <details className="health-details-panel">
             <summary>Backend connection</summary>
@@ -438,6 +526,7 @@ export function ObservationWorkspace() {
                 {mapError && (
                   <button
                     type="button"
+                    className="secondary-button"
                     onClick={() => {
                       setMapError(null)
                       setMapAttempt((value) => value + 1)
@@ -481,16 +570,16 @@ export function ObservationWorkspace() {
               </p>
               <div className="scene-viewport">
                 <LunarScene
-                  observationPoint={result?.point ?? null}
+                  observationPoint={selectedPoint}
                   site={
-                    result?.site ??
+                    (workflow === 'timeline' ? timelineResult?.site : result?.site) ??
                     (draft.mode === 'catalog' ? draft.site : null)
                   }
-                  dataStatus={result?.meta.data_status ?? null}
-                  sunDirectionEnu={result?.point.sun.direction_enu ?? null}
-                  earthDirectionEnu={result?.point.earth.direction_enu ?? null}
-                  observerHeightM={result?.site.observer_height_m}
-                  isLoading={observation.busy}
+                  dataStatus={(workflow === 'timeline' ? timelineResult?.meta.data_status : result?.meta.data_status) ?? null}
+                  sunDirectionEnu={selectedPoint?.sun.direction_enu ?? null}
+                  earthDirectionEnu={selectedPoint?.earth.direction_enu ?? null}
+                  observerHeightM={(workflow === 'timeline' ? timelineResult?.site.observer_height_m : result?.site.observer_height_m) ?? undefined}
+                  isLoading={busy}
                 />
               </div>
               <p className="field-help">
@@ -498,7 +587,18 @@ export function ObservationWorkspace() {
               </p>
             </section>
           </div>
-          <ObservationResult result={result} />
+          {workflow === 'timeline' ? (
+            timelineResult ? (
+              <TimelineAnalytics result={timelineResult} playback={playback} />
+            ) : (
+              <section className="workspace-card" aria-label="Timeline result">
+                <h2>Timeline analysis</h2>
+                <p className="muted">Submit a period to load returned samples, intervals, and summary metrics.</p>
+              </section>
+            )
+          ) : (
+            <ObservationResult result={result} />
+          )}
           <CSAResources />
         </div>
       </div>

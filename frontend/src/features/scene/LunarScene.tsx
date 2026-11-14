@@ -83,6 +83,7 @@ const LocalAxes: React.FC<{ length?: number }> = ({ length = 5 }) => {
 const GeometricHorizonReference: React.FC<{ radius?: number }> = ({
   radius = 6,
 }) => {
+  // Tangent plane (y = 0) represents 0.0° geometric horizon before physical DEM ray-tracing.
   return (
     <group rotation={[-Math.PI / 2, 0, 0]} data-testid="horizon-reference">
       {/* Outer horizon ring */}
@@ -223,7 +224,7 @@ const SceneContent: React.FC<{
 }
 
 /**
- * Pure 3D Local Scene Component for Stage 2.
+ * Pure 3D Local Scene Component for Stage 3.
  *
  * Implements:
  * - Real direction ENU vectors mapped to Three.js scene (x=east, y=up, z=-north)
@@ -436,7 +437,7 @@ export const LunarScene: React.FC<LunarSceneProps> = (props) => {
         <span>
           Geometric Reference Horizon (Elevation 0.0°) · Local ENU scene
         </span>
-        <span>Terrain occlusion not modeled in Stage 2</span>
+        <span>Terrain occlusion not modeled in Stage 3</span>
       </div>
 
       {/* Loading Overlay */}

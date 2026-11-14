@@ -10,7 +10,7 @@ export function App() {
           <h1 className="app-title" data-testid="app-title">
             Lunar Landing Site Navigator
           </h1>
-          <span className="stage-badge">Stage 1</span>
+          <span className="stage-badge">Stage 3</span>
         </div>
         {isDemoModeEnabled() && (
           <span className="demo-badge" data-testid="header-demo-badge">

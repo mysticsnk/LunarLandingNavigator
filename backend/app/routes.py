@@ -7,9 +7,9 @@ from fastapi.exceptions import RequestValidationError
 from starlette.concurrency import run_in_threadpool
 
 from app.core.problems import ErrorEnvelope
-from app.requests import Category, NowRequest
+from app.requests import Category, NowRequest, TimelineRequest
 from app.resources import get_resources
-from app.results import NowResult
+from app.results import NowResult, TimelineResult
 from app.storage import Repository, get_repository
 
 
@@ -88,13 +88,25 @@ async def submit_now(payload: NowRequest, request: Request, repository: Repo):
     )
 
 
+@router.post("/ephemeris/timeline", status_code=202, dependencies=[Depends(query_fields())])
+async def submit_timeline(payload: TimelineRequest, request: Request, repository: Repo):
+    return await run_in_threadpool(
+        repository.submit,
+        payload,
+        request.state.request_id,
+        submitted=await request.json(),
+    )
+
+
 @router.get("/jobs/{job_id}", dependencies=[Depends(query_fields())])
 def job_status(job_id: UUID, repository: Repo):
     return repository.status(str(job_id))
 
 
 @router.get(
-    "/jobs/{job_id}/result", response_model=NowResult, dependencies=[Depends(query_fields())]
+    "/jobs/{job_id}/result",
+    response_model=NowResult | TimelineResult,
+    dependencies=[Depends(query_fields())],
 )
 def job_result(job_id: UUID, repository: Repo):
     return repository.result(str(job_id))

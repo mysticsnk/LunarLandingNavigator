@@ -72,6 +72,7 @@ export const LunarMap: React.FC<LunarMapProps> = ({
       const y =
         (event.clientY - rect.top - (rect.height - 180 * scale) / 2) / scale
       if (x < 0 || x > 360 || y < 0 || y > 180) return
+      // Map SVG surface coordinates: y in [0, 180] maps to lat [90, -90]; x in [0, 360] maps to lon [-180, 180).
       const clampedLat = 90 - y
       const normLon = normalizeLongitude(x - 180)
 

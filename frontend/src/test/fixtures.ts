@@ -9,6 +9,7 @@ import type {
   NowRequest,
   NowResult,
   SiteList,
+  TimelineResult,
 } from '../api/types'
 
 // Test-only synthetic examples; these are not measured scientific results.
@@ -26,6 +27,8 @@ function example<T>(name: string): T {
 }
 export const accepted = example<JobAccepted>('job-accepted-now')
 export const observationResult = example<NowResult>('observation-result')
+export const timelineAccepted = example<JobAccepted>('job-accepted')
+export const timelineResult = example<TimelineResult>('timeline-two-golden-windows')
 export const queued: Job = { ...example<Job>('job-queued'), kind: 'now' }
 export const running: Job = { ...example<Job>('job-running'), kind: 'now' }
 export const failed: Job = { ...example<Job>('job-failed'), kind: 'now' }

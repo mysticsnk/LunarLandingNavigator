@@ -235,7 +235,7 @@ export interface paths {
         put?: never;
         /**
          * submitTimelineRequest
-         * @description Planned contract only. Not registered by the Stage 2 backend. Timeline, comparison and physical terrain occlusion are excluded.
+         * @description Implemented in Stage 3. Timeline calculations use geometric mode; comparison and physical terrain occlusion remain unimplemented.
          */
         post: operations["submitTimelineRequest"];
         delete?: never;
@@ -273,7 +273,7 @@ export interface paths {
         };
         /**
          * getJob
-         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions use geometric mode only.
+         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 3; now and timeline jobs use geometric mode only.
          */
         get: operations["getJob"];
         put?: never;

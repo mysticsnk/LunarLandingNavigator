@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildRequest, initialScenario, serializeUtc } from './scenario'
+import { buildRequest, buildTimelineRequest, initialScenario, serializeUtc } from './scenario'
 import { catalog } from '../../test/fixtures'
 
 describe('UTC scenario validation', () => {
@@ -77,5 +77,48 @@ describe('UTC scenario validation', () => {
       visibility_margin_deg: 5,
       horizon_mode: 'geometric',
     })
+  })
+  it('builds the agreed geometric timeline request for both site forms', () => {
+    const draft = {
+      ...initialScenario(),
+      site: catalog.items[0],
+      utcTime: '2027-07-15T12:00',
+    }
+    expect(buildTimelineRequest(draft)).toEqual({
+      site: { site_id: 'development-site' },
+      start_time: '2027-07-15T12:00:00Z',
+      duration_days: 14,
+      step_minutes: 120,
+      horizon_mode: 'geometric',
+      observer_height_m: 2,
+      visibility_margin_deg: 0,
+    })
+    expect(buildTimelineRequest({
+      ...draft,
+      mode: 'custom',
+      latitude: '-89.44',
+      longitude: '222.1',
+    }).site).toEqual({ latitude: -89.44, longitude: 222.1 })
+  })
+  it.each([
+    ['durationDays', '0'],
+    ['durationDays', '30.5'],
+    ['durationDays', '31'],
+    ['stepMinutes', '45'],
+  ])('rejects unsupported timeline %s=%s', (field, value) => {
+    expect(() => buildTimelineRequest({
+      ...initialScenario(),
+      site: catalog.items[0],
+      utcTime: '2027-07-15T12:00',
+      [field]: value,
+    })).toThrow()
+  })
+  it('rejects a timeline whose exclusive period end exceeds supported UTC', () => {
+    expect(() => buildTimelineRequest({
+      ...initialScenario(),
+      site: catalog.items[0],
+      utcTime: '2049-12-31T12:00',
+      durationDays: '1',
+    })).toThrow('period must end')
   })
 })

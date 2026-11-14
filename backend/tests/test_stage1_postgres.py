@@ -1,8 +1,9 @@
 import json
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from contextlib import contextmanager
-from datetime import timedelta
+from datetime import datetime, timedelta
 from importlib import import_module
 from pathlib import Path
 from threading import Event
@@ -27,7 +28,7 @@ from app.requests import NowRequest
 from app.resources import get_resources
 from app.routes import get_csa_fetcher
 from app.storage import Repository, get_repository, iso, jobs
-from app.worker import HORIZONS_LOCK, execute_observation, run_once
+from app.worker import HORIZONS_LOCK, execute_observation, execute_timeline, run_once
 
 pytestmark = pytest.mark.integration
 
@@ -240,6 +241,138 @@ def test_live_observation_job_uses_horizons_and_persists_result(pg_client, pg_re
         source["fetched_at"] != result["point"]["timestamp"] for source in result["meta"]["sources"]
     )
     assert pg_repo.result(accepted.json()["job_id"]) == result
+
+
+def test_timeline_lifecycle_cache_and_failures_with_postgresql(pg_client, pg_repo, monkeypatch):
+    requests = []
+
+    def response(request):
+        requests.append(dict(request.url.params))
+        params = request.url.params
+        start = datetime.fromisoformat(params["START_TIME"].strip("'"))
+        stop = datetime.fromisoformat(params["STOP_TIME"].strip("'"))
+        step = timedelta(minutes=int(params["STEP_SIZE"].strip("' ").removesuffix("m")))
+        target = "Sun" if params["COMMAND"].strip("'") == "10" else "Earth"
+        lines = []
+        instant = start
+        while instant <= stop:
+            elevation = 10.0 if target == "Earth" or len(lines) % 4 in (0, 3) else -10.0
+            lines.append(f"{instant.strftime('%Y-%b-%d %H:%M:%S')}, , , 180.0, {elevation}")
+            instant += step
+        return httpx.Response(
+            200,
+            json={"result": "{source: DE441}\n$$SOE\n" + "\n".join(lines) + "\n$$EOE"},
+        )
+
+    provider = HorizonsProvider(
+        client=httpx.Client(transport=httpx.MockTransport(response)), max_retries=0
+    )
+    monkeypatch.setattr("app.worker.HorizonsProvider", lambda **kwargs: provider)
+    request = {
+        "site": {"site_id": "shackleton-connecting-ridge"},
+        "start_time": f"2027-07-15T12:00:{uuid4().int % 60:02d}Z",
+        "duration_days": 14,
+        "step_minutes": 120,
+        "horizon_mode": "geometric",
+        "observer_height_m": 2,
+        "visibility_margin_deg": 0,
+    }
+    accepted = pg_client.post("/api/v1/ephemeris/timeline", json=request)
+    assert accepted.status_code == 202
+    assert run_once(pg_repo, executor=execute_timeline)
+    status = pg_client.get(accepted.json()["status_url"]).json()
+    result = pg_client.get(accepted.json()["result_url"]).json()
+    assert status["status"] == "succeeded", status
+    check_schema("TimelineResult", result)
+    assert result["total_samples"] == len(result["points"]) == 168
+    requested_start = datetime.fromisoformat(request["start_time"].replace("Z", "+00:00"))
+    expected_end = requested_start + timedelta(days=14)
+    assert result["points"][-1]["timestamp"] == (expected_end - timedelta(minutes=120)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    assert result["end_time"] == expected_end.strftime("%Y-%m-%dT%H:%M:%SZ")
+    assert result["earth_visibility_windows"][0]["end_time"] == result["end_time"]
+    assert result["summary"]["next_earthset_at"] is None
+    assert result["meta"]["data_status"] == "fresh"
+    assert len(requests) == 2
+
+    cached_request = {**request, "site": {"latitude": -89.44, "longitude": 222.1}}
+    cached = pg_client.post("/api/v1/ephemeris/timeline", json=cached_request)
+    assert cached.status_code == 202
+    assert run_once(pg_repo, executor=lambda _: pytest.fail("Cache hit must not call Horizons"))
+    cached_result = pg_client.get(cached.json()["result_url"]).json()
+    assert cached_result["meta"]["data_status"] == "cached"
+    assert cached_result["meta"]["generated_at"] == result["meta"]["generated_at"]
+    assert len(requests) == 2
+
+    custom_request = {
+        **request,
+        "site": {"latitude": -89.44, "longitude": 222.1},
+        "start_time": f"2027-07-16T12:00:{uuid4().int % 60:02d}Z",
+        "duration_days": 1,
+        "step_minutes": 360,
+    }
+    custom = pg_client.post("/api/v1/ephemeris/timeline", json=custom_request)
+    assert custom.status_code == 202
+    assert run_once(pg_repo, executor=execute_timeline)
+    custom_result = pg_client.get(custom.json()["result_url"]).json()
+    assert custom_result["meta"]["data_status"] == "fresh"
+    assert custom_result["total_samples"] == 4
+    assert custom_result["site"]["site_id"] is None
+    assert custom_result["site"]["longitude"] == -137.9
+    assert len(requests) == 4
+
+    distinct = pg_client.post("/api/v1/ephemeris/timeline", json={**request, "step_minutes": 60})
+    assert distinct.status_code == 202
+    unavailable_provider = HorizonsProvider(
+        client=httpx.Client(
+            transport=httpx.MockTransport(lambda _: httpx.Response(503, text="Controlled outage"))
+        ),
+        max_retries=0,
+    )
+    monkeypatch.setattr("app.worker.HorizonsProvider", lambda **kwargs: unavailable_provider)
+    assert run_once(pg_repo, executor=execute_timeline)
+    failed = pg_client.get(distinct.json()["status_url"]).json()
+    assert failed["status"] == "failed"
+    assert failed["error"]["code"] == "ASTRONOMY_UNAVAILABLE"
+    assert pg_client.get(distinct.json()["result_url"]).status_code == 409
+
+
+@pytest.mark.skipif(
+    not os.getenv("TEST_LIVE_HORIZONS"),
+    reason="Set TEST_LIVE_HORIZONS to run a bounded live timeline workflow",
+)
+def test_live_timeline_job_persists_real_horizons_result(pg_client, pg_repo):
+    start_time = f"2027-07-15T12:00:{uuid4().int % 60:02d}Z"
+    request = {
+        "site": {"site_id": "shackleton-connecting-ridge"},
+        "start_time": start_time,
+        "duration_days": 14,
+        "step_minutes": 120,
+        "horizon_mode": "geometric",
+        "observer_height_m": 2,
+        "visibility_margin_deg": 0,
+    }
+    accepted = pg_client.post("/api/v1/ephemeris/timeline", json=request)
+    assert accepted.status_code == 202
+    started = time.perf_counter()
+    assert run_once(pg_repo)
+    elapsed_seconds = time.perf_counter() - started
+    status = pg_client.get(accepted.json()["status_url"]).json()
+    result = pg_client.get(accepted.json()["result_url"]).json()
+    assert status["status"] == "succeeded", status
+    check_schema("TimelineResult", result)
+    assert result["total_samples"] == len(result["points"]) == 168
+    assert result["points"][0]["timestamp"] == start_time
+    assert result["points"][-1]["timestamp"] != result["end_time"]
+    assert result["meta"]["data_status"] == "fresh"
+    assert len(result["meta"]["sources"]) == 2
+    payload_bytes = len(json.dumps(result, separators=(",", ":")).encode("utf-8"))
+    print(
+        "LIVE_TIMELINE "
+        f"elapsed_seconds={elapsed_seconds:.3f} payload_bytes={payload_bytes} "
+        f"samples={result['total_samples']}"
+    )
 
 
 def test_versioned_seed_and_durable_job_cache_on_postgresql(pg_repo):

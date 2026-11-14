@@ -1,15 +1,16 @@
-# Lunar Landing Site Navigator - Stage 2
+# Lunar Landing Site Navigator - Stage 3
 
-The integrated Stage 2 workspace provides catalog/custom-site observations,
-durable jobs, CSA resources, lunar imagery and an API-driven local sky scene.
+The integrated Stage 3 workspace provides catalog/custom-site observations,
+multi-day geometric timelines, durable jobs, CSA resources, lunar imagery and
+an API-driven local sky scene with returned-sample playback.
 See [Stage 1 completion and reproduction](docs/integration/STAGE1_COMPLETION.md)
-for the Stage 1 baseline and [Stage 2 validation reports](docs/validation/) for
+for the Stage 1 baseline and [Stage 3 validation reports](docs/validation/) for
 current integration evidence and remaining operational limitations.
 
 Repository root contains the existing `frontend/` and the new `backend/` side by
 side. Run root commands from the directory containing this README, not its parent.
 Frontend configuration is preserved. Map/scene interfaces and shared integration
-are documented in the Stage 1 handoffs and Stage 2 validation reports.
+are documented in the Stage 1 handoffs and Stage 2/3 validation reports.
 
 Python baseline is 3.12 (`.python-version` and backend metadata); Node baseline
 is 22.13.0 (`.nvmrc`), with Node 22.13 or newer in the Node 22 series supported.
@@ -57,8 +58,9 @@ python -m uv run --locked python --version
    uv run --locked uvicorn app.main:app --host 127.0.0.1 --port 8000
    ```
 
-   Migration `0001_stage1` creates the curated catalog, durable observation jobs
-   and PostgreSQL caches. Settings read the root `.env` independently of the
+   Migrations `0001_stage1` and `0002_stage3_timeline_jobs` create the curated
+   catalog, durable single-time and timeline jobs, and PostgreSQL caches.
+   Settings read the root `.env` independently of the
    current working directory. In a separate terminal from `backend/`, run
    `uv run --locked python -m app.worker` to execute queued observations.
    API restarts do not delete jobs; without the worker, accepted jobs remain queued.
@@ -121,9 +123,9 @@ runs them now. No frontend package or configuration is created by this backend s
 
 Read `docs/API_V1.md`, `docs/CONTRACT_DECISIONS.md` and
 `contracts/openapi.v1.yaml`. The supplied API v1 specification is documented in
-English with all 15 paths and synthetic fixtures. Stage 2 implements health,
-catalog, CSA resources, single-time geometric observation jobs and registered
-map imagery. Timeline, comparison and terrain operations remain unregistered.
+English with its paths and synthetic fixtures. Stage 3 implements health,
+catalog, CSA resources, single-time and timeline geometric jobs, and registered
+map imagery. Comparison and physical terrain operations remain unregistered.
 Errors use the agreed code, message, details and request_id fields. Remaining
 lunar frame and schema review items are explicit in CONTRACT_DECISIONS.md.
 

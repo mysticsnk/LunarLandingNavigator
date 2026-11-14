@@ -1,9 +1,8 @@
 # Stage 3 timeline acceptance report
 
 **Date:** 2026-11-14
-**Scope:** Timeline interval and metric acceptance, controlled service fixtures,
-OpenAPI response fixture validation, and current frontend readiness. Production
-timeline service, API, worker, and frontend files were not changed.
+**Scope:** Timeline interval and metric acceptance, integrated timeline API and
+worker, controlled service fixtures, and frontend timeline interaction.
 
 ## Acceptance summary
 
@@ -15,8 +14,8 @@ timeline service, API, worker, and frontend files were not changed.
 | OpenAPI result fixture | Passed | Existing controlled `timeline-two-golden-windows.json` validates against `TimelineResult`. |
 | Controlled Horizons service behavior | Passed | Existing timeline service tests use `httpx.MockTransport`, including sample-to-single-observation consistency. |
 | Live timeline sample comparison | Passed | One live timeline sample at `2027-07-15T00:00:00Z` matched a live single-observation call for Sun/Earth angles within `1e-6` degrees and for visibility/golden flags. |
-| Timeline job/result integration | **Blocked** | Runtime POST returns 404; OpenAPI marks the timeline operation `planned` and says it is not registered. |
-| Timeline chart and scene navigation | **Blocked** | The UI still renders the planned analytics placeholder; no timeline chart or sample playback path exists. |
+| Timeline job/result integration | Passed in Stage 3 backend handoff | The registered route returns 202 and uses durable job/result endpoints; see [`STAGE_3_BACKEND.md`](STAGE_3_BACKEND.md) for PostgreSQL and provider evidence. |
+| Timeline chart and scene navigation | Passed in frontend regression suite | Chart uses returned elevations and golden intervals; selecting or playing a sample updates the scene from that returned point. |
 
 ## Controlled cases
 
@@ -44,10 +43,11 @@ boundary; full-day request acceptance remains necessary after route integration.
 
 ## Failed integration acceptance and minimal reproduction
 
-The contract contains `POST /api/v1/ephemeris/timeline` with
-`x-implementation-status: planned`. A valid one-day geometric request was sent
-through FastAPI `TestClient` with the normal database health dependency
-overridden:
+The earlier acceptance run was performed before timeline route integration. At
+that time, the route was absent and a valid request returned 404. The current
+repository has since integrated this path; use the backend handoff for current
+route, worker, PostgreSQL, and provider evidence. The old reproduction below is
+historical and is not a statement of current behavior:
 
 ```json
 {
@@ -59,18 +59,11 @@ overridden:
 }
 ```
 
-Observed response: `404 HTTP_404` (`Not Found`). The route is also absent from
-the runtime `/openapi.json`. Consequently no timeline `202 Accepted` job can be
-created, polled to success, or retrieved and validated as a persisted
-`TimelineResult`. The generic Stage 2 job endpoints do not substitute for a
-timeline submission path.
-
-The UI review found `AnalyticsSlot` still labels timeline analytics “Planned for
-a later stage”. There is no chart for separate intervals, no timeline timestamp
-navigation, and no scene playback driven by returned timeline samples. The
-single-observation scene tests remain applicable to that single-time path only.
-The existing `App.test.tsx` also passed its guard against fabricated percentage,
-watts, or Mbps displays; no solar-generation power display was found.
+The UI previously rendered a placeholder. It now submits a timeline job,
+polls through the shared job routes, validates the complete returned grid,
+shows the API's intervals and summary, and drives local sample selection and
+playback without additional requests. Regression coverage uses the explicitly
+synthetic contract fixture; it is not live scientific verification.
 
 ## Live verification
 
@@ -90,10 +83,15 @@ from the Shackleton site name or latitude.
 | `ruff check tests/test_timeline_acceptance.py` | Passed. |
 | `pytest tests/test_timeline_acceptance.py tests/test_timeline_service.py -p no:cacheprovider` | 20 passed, 2 live checks skipped by default, 1 Starlette/AnyIO deprecation warning. |
 | `TEST_LIVE_HORIZONS=1 pytest tests/test_timeline_acceptance.py -k test_live_timeline_sample_matches_single_observation -p no:cacheprovider` | 1 passed, 11 deselected; live Horizons comparison completed in 3.08s; same deprecation warning. |
-| `npm.cmd run test -- src/App.test.tsx` | 13 passed. |
+| Frontend timeline regression | Current full run: 141 tests passed across 12 files, including timeline job lifecycle, contract payload, intervals, clipping label, and selected scene sample. |
 | `npm.cmd run test -- src/features/scene/Scene.test.tsx` | 16 passed; Three.js CommonJS deprecation warning. |
 | OpenAPI `TimelineResult` fixture validation | Passed for the existing controlled contract example. |
-| FastAPI timeline submission reproduction | Failed acceptance as expected: 404; runtime route absent. |
+| Earlier FastAPI timeline submission reproduction | Historical result before integration: 404; runtime route was absent at that time. |
+| `npm run check:api` | Passed. |
+| `npm run typecheck` | Passed. |
+| `npm run lint` | Passed with no lint findings. |
+| `npm test` | 141 passed across 12 files; Three.js CommonJS deprecation warning. |
+| `npm run build` | Passed; Vite reports the large JavaScript chunk warning (1,229.40 kB minified). |
 
 The following command reproduces the primary checks in PowerShell:
 
@@ -107,31 +105,28 @@ Remove-Item Env:TEST_LIVE_HORIZONS
 Pop-Location
 
 Push-Location frontend
-npm.cmd run test -- src/App.test.tsx
-npm.cmd run test -- src/features/scene/Scene.test.tsx
+npm.cmd run check:api
+npm.cmd run typecheck
+npm.cmd run lint
+npm.cmd test
+npm.cmd run build
 Pop-Location
 ```
 
-## Remaining acceptance work and coordination
+The recorded frontend run used Node `v24.16.0`; the repository's `.nvmrc`
+specifies `22.13.0`.
 
-- Yaroslav must register the timeline submission with the durable job worker,
-  persist the full contract response and metadata, and demonstrate submit/status/
-  result behavior with a controlled provider fixture.
-- Denys should review the isolated acceptance test location
-  `backend/tests/test_timeline_acceptance.py` and fixture location
-  `backend/tests/fixtures/timeline_acceptance.json` before merging them into the
-  team's maintained test layout.
-- Sasha must connect actual returned intervals, timestamps, and resolution to a
-  timeline chart/navigation UI; Slavik must connect the selected returned sample
-  to scene playback. Keep the interval lists separate and avoid recomputing
-  astronomical values in React.
-- Repeat integrated UI checks for separate windows, real timestamps, selected
-  scene sample, period-end clipping label, visible time resolution, and absence
-  of watts or an invented solar-generation percentage.
-- Run a bounded real-provider job through the completed API/worker path and
-  compare multiple selected persisted samples against single-observation results.
+## Remaining acceptance work and limitations
 
-No active Denys, Yaroslav, Sasha, or Slavik collaboration session was available
-during this validation. Changes were isolated to the independent acceptance
-test, its controlled fixture, and these validation documents; no other owner's
-production files were edited.
+- Automated frontend tests do not replace a visual browser review against a
+  configured live backend.
+- The earlier live service comparison does not verify a live persisted job in
+  this run. Repeat a bounded provider-backed timeline job when the provider and
+  isolated PostgreSQL test database are available.
+- The UI shows sampled values at the requested resolution. It does not infer
+  sub-step transitions, continuous windows, physical terrain occlusion, or
+  multi-site ranking.
+
+This document retains the initial route-absence reproduction as history; it is
+not a current blocker. See [`STAGE_3_BACKEND.md`](STAGE_3_BACKEND.md) for the
+integrated backend implementation and its recorded evidence.

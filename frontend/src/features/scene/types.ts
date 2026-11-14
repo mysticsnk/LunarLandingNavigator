@@ -1,5 +1,5 @@
 /**
- * Types for 3D Lunar Local Scene Visualization (Stage 2)
+ * Types for 3D Lunar Local Scene Visualization (Stage 3)
  */
 
 import type { EnuVector } from '../../lib/coordinates'
