@@ -396,3 +396,108 @@ class HorizonsProvider:
             ephemeris_source=ephem_source,
             request_params=params,
         )
+
+    def query_body_series(
+        self,
+        *,
+        target: str,
+        latitude: float,
+        longitude: float,
+        altitude_m: float = 2.0,
+        start_time: datetime | str,
+        stop_time: datetime | str,
+        step_minutes: int,
+    ) -> list[EphemerisObservation]:
+        """Query topocentric apparent airless ephemeris series for Sun or Earth.
+
+        Queries a bounded time range with the specified step size, filters according
+        to the requested time grid [start_time, stop_time), and validates against
+        gaps, duplicates, or missing points.
+        """
+        norm_lon = normalize_longitude(longitude)
+        if isinstance(start_time, str):
+            dt_start = datetime.fromisoformat(start_time)
+        else:
+            dt_start = start_time
+
+        if isinstance(stop_time, str):
+            dt_stop = datetime.fromisoformat(stop_time)
+        else:
+            dt_stop = stop_time
+
+        if dt_start.tzinfo is None or dt_stop.tzinfo is None:
+            raise ValueError("Start and stop times must include an explicit timezone")
+
+        dt_start_utc = dt_start.astimezone(UTC)
+        dt_stop_utc = dt_stop.astimezone(UTC)
+
+        if dt_stop_utc <= dt_start_utc:
+            raise ValueError("stop_time must be strictly greater than start_time")
+
+        step = timedelta(minutes=step_minutes)
+        expected_timestamps: list[str] = []
+        curr = dt_start_utc
+        while curr < dt_stop_utc:
+            expected_timestamps.append(curr.strftime("%Y-%m-%dT%H:%M:%SZ"))
+            curr += step
+
+        end_time_iso = dt_stop_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        params = build_horizons_params(
+            target=target,
+            latitude=latitude,
+            longitude=norm_lon,
+            altitude_m=altitude_m,
+            start_time=dt_start_utc,
+            stop_time=dt_stop_utc,
+            step_size=f"{step_minutes}m",
+        )
+
+        body_json, source_url, retrieval_time = self._execute_request(params)
+        observations, provider_name, ephem_source = parse_horizons_response(body_json)
+
+        if target.lower() in ("sun", "10"):
+            canonical_target = "Sun"
+        elif target.lower() in ("earth", "399"):
+            canonical_target = "Earth"
+        else:
+            canonical_target = target
+
+        # Filter according to requested time grid explicitly (ignoring provider endpoint rows)
+        filtered_rows = [row for row in observations if row["timestamp"] < end_time_iso]
+
+        returned_timestamps = [row["timestamp"] for row in filtered_rows]
+        if len(returned_timestamps) != len(set(returned_timestamps)):
+            raise HorizonsParseError(
+                f"Duplicate timestamps returned in Horizons response for {canonical_target}"
+            )
+
+        if returned_timestamps != expected_timestamps:
+            missing = set(expected_timestamps) - set(returned_timestamps)
+            if missing:
+                count = len(missing)
+                msg = (
+                    f"Horizons response for {canonical_target} missing {count} "
+                    "requested timestamp(s)"
+                )
+                raise HorizonsParseError(msg)
+            raise HorizonsParseError(
+                f"Inconsistent timestamp grid returned by Horizons for {canonical_target}"
+            )
+
+        return [
+            EphemerisObservation(
+                target=canonical_target,
+                timestamp=row["timestamp"],
+                azimuth_deg=row["azimuth_deg"],
+                elevation_deg=row["elevation_deg"],
+                solar_presence=row["solar_presence"],
+                interfering_marker=row["interfering_marker"],
+                source_url=source_url,
+                retrieval_time=retrieval_time,
+                provider_name=provider_name,
+                ephemeris_source=ephem_source,
+                request_params=params,
+            )
+            for row in filtered_rows
+        ]
