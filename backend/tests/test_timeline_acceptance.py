@@ -63,9 +63,7 @@ def _points(
     earth_flags: list[bool],
 ) -> list[ObservationPoint]:
     points = []
-    for offset, sun_visible, earth_visible in zip(
-        offsets, sun_flags, earth_flags, strict=True
-    ):
+    for offset, sun_visible, earth_visible in zip(offsets, sun_flags, earth_flags, strict=True):
         sun_elevation = 1.0 if sun_visible else -1.0
         earth_elevation = 1.0 if earth_visible else -1.0
         points.append(
@@ -137,9 +135,7 @@ def test_twelve_hour_two_hour_acceptance_case_and_metric_consistency(fixture):
     )
     sun_windows = detect_continuous_windows(timestamps, case["sun_visible"], step, end)
     earth_windows = detect_continuous_windows(timestamps, case["earth_visible"], step, end)
-    golden_windows = detect_continuous_windows(
-        timestamps, case["golden_states"], step, end
-    )
+    golden_windows = detect_continuous_windows(timestamps, case["golden_states"], step, end)
 
     assert [point.timestamp for point in points] == sorted(point.timestamp for point in points)
     assert points[-1].timestamp != fixture["end_time"]
@@ -187,8 +183,7 @@ def test_twelve_hour_two_hour_acceptance_case_and_metric_consistency(fixture):
         window.duration_hours for window in golden_windows
     )
     assert all(
-        point.is_golden_window == (point.sun.visible and point.earth.visible)
-        for point in points
+        point.is_golden_window == (point.sun.visible and point.earth.visible) for point in points
     )
 
 
