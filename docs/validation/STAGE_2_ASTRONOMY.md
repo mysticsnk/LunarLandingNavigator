@@ -89,6 +89,12 @@ Failures never return synthetic values, zeroes, or fallbacks:
 ## 5. Verification Results Summary
 
 ### Test Suite Execution
+- The following pass counts are historical run records. The current checkout
+  collects 289 of 295 tests with `pytest --collect-only -q -m "not integration"`;
+  a current execution attempt timed out in the TestClient Windows socket setup
+  in this restricted environment. The backend handoff records a different
+  historical suite count (273 passed, 3 skipped, 6 deselected), so neither
+  recorded count should be treated as a result for the current checkout.
 - `pytest -m "not integration"`: **277 passed**, 2 skipped (live opt-ins), 4 deselected.
 - `pytest tests/test_stage2_observation_workflow.py`: **8 passed**, 1 skipped (live opt-in).
 - `pytest tests/test_stage2_observation_workflow.py -k "test_live_observation_workflow_shackleton"` (with `TEST_LIVE_HORIZONS=1`): **1 passed in 3.09s** against live JPL Horizons API.
@@ -97,4 +103,7 @@ Failures never return synthetic values, zeroes, or fallbacks:
 - `ruff check .` & `ruff format --check .`: Clean (0 errors across 41 files).
 
 ### Unresolved Discrepancies
-None for single-time geometric observations. All angles, vectors, visibility flags, source metadata, and error handling strictly follow API v1 and contract specifications.
+Physical terrain occlusion remains outside the Stage 2 scope; terrain requests
+fail explicitly with `TERRAIN_UNAVAILABLE`. The single-time geometric workflow
+uses the documented API v1 fields, units, visibility rules, source metadata and
+error behavior.

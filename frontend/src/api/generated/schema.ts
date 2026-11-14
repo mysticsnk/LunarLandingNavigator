@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * getHealth
-         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 1; observation submissions use geometric mode only.
+         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions use geometric mode only.
          */
         get: operations["getHealth"];
         put?: never;
@@ -33,7 +33,7 @@ export interface paths {
         };
         /**
          * listSites
-         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 1; observation submissions use geometric mode only.
+         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions use geometric mode only.
          */
         get: operations["listSites"];
         put?: never;
@@ -53,7 +53,7 @@ export interface paths {
         };
         /**
          * getSite
-         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 1; observation submissions use geometric mode only.
+         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions use geometric mode only.
          */
         get: operations["getSite"];
         put?: never;
@@ -73,7 +73,7 @@ export interface paths {
         };
         /**
          * listLayers
-         * @description Planned contract only. Not registered by this Stage 1 backend unless an external map router is explicitly supplied. Timeline, comparison and physical terrain occlusion are excluded.
+         * @description Implemented in Stage 2. This registered imagery route accepts only known lunar layers; timeline, comparison and physical terrain occlusion are excluded.
          */
         get: operations["listLayers"];
         put?: never;
@@ -93,7 +93,7 @@ export interface paths {
         };
         /**
          * getLayer
-         * @description Planned contract only. Not registered by this Stage 1 backend unless an external map router is explicitly supplied. Timeline, comparison and physical terrain occlusion are excluded.
+         * @description Implemented in Stage 2. This registered imagery route accepts only known lunar layers; timeline, comparison and physical terrain occlusion are excluded.
          */
         get: operations["getLayer"];
         put?: never;
@@ -113,7 +113,7 @@ export interface paths {
         };
         /**
          * getMapTile
-         * @description Planned contract only. Not registered by this Stage 1 backend unless an external map router is explicitly supplied. Timeline, comparison and physical terrain occlusion are excluded.
+         * @description Implemented in Stage 2. This registered imagery route accepts only known lunar layers; timeline, comparison and physical terrain occlusion are excluded.
          */
         get: operations["getMapTile"];
         put?: never;
@@ -133,7 +133,7 @@ export interface paths {
         };
         /**
          * getMapImage
-         * @description Planned contract only. Not registered by this Stage 1 backend unless an external map router is explicitly supplied. Timeline, comparison and physical terrain occlusion are excluded.
+         * @description Implemented in Stage 2. This registered imagery route accepts only known lunar layers; timeline, comparison and physical terrain occlusion are excluded.
          */
         get: operations["getMapImage"];
         put?: never;
@@ -153,7 +153,7 @@ export interface paths {
         };
         /**
          * getTerrainCoverage
-         * @description Planned contract only. Not registered by this Stage 1 backend unless an external map router is explicitly supplied. Timeline, comparison and physical terrain occlusion are excluded.
+         * @description Planned contract only. Not registered by the Stage 2 backend. Timeline, comparison and physical terrain occlusion are excluded.
          */
         get: operations["getTerrainCoverage"];
         put?: never;
@@ -173,7 +173,7 @@ export interface paths {
         };
         /**
          * getHeightmap
-         * @description Planned contract only. Not registered by this Stage 1 backend unless an external map router is explicitly supplied. Timeline, comparison and physical terrain occlusion are excluded.
+         * @description Planned contract only. Not registered by the Stage 2 backend. Timeline, comparison and physical terrain occlusion are excluded.
          */
         get: operations["getHeightmap"];
         put?: never;
@@ -193,7 +193,7 @@ export interface paths {
         };
         /**
          * listCSAResources
-         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 1; observation submissions use geometric mode only.
+         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions use geometric mode only.
          */
         get: operations["listCSAResources"];
         put?: never;
@@ -215,7 +215,7 @@ export interface paths {
         put?: never;
         /**
          * submitNowRequest
-         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 1; observation submissions use geometric mode only.
+         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions use geometric mode only.
          */
         post: operations["submitNowRequest"];
         delete?: never;
@@ -235,7 +235,7 @@ export interface paths {
         put?: never;
         /**
          * submitTimelineRequest
-         * @description Planned contract only. Not registered by this Stage 1 backend unless an external map router is explicitly supplied. Timeline, comparison and physical terrain occlusion are excluded.
+         * @description Planned contract only. Not registered by the Stage 2 backend. Timeline, comparison and physical terrain occlusion are excluded.
          */
         post: operations["submitTimelineRequest"];
         delete?: never;
@@ -255,7 +255,7 @@ export interface paths {
         put?: never;
         /**
          * submitComparisonRequest
-         * @description Planned contract only. Not registered by this Stage 1 backend unless an external map router is explicitly supplied. Timeline, comparison and physical terrain occlusion are excluded.
+         * @description Planned contract only. Not registered by the Stage 2 backend. Timeline, comparison and physical terrain occlusion are excluded.
          */
         post: operations["submitComparisonRequest"];
         delete?: never;
@@ -273,7 +273,7 @@ export interface paths {
         };
         /**
          * getJob
-         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 1; observation submissions use geometric mode only.
+         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions use geometric mode only.
          */
         get: operations["getJob"];
         put?: never;
@@ -293,7 +293,7 @@ export interface paths {
         };
         /**
          * getJobResult
-         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 1; observation submissions use geometric mode only.
+         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions use geometric mode only.
          */
         get: operations["getJobResult"];
         put?: never;

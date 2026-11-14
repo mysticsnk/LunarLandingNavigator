@@ -370,8 +370,7 @@ export function ObservationWorkspace() {
                   </label>
                 </div>
                 <p className="field-help">
-                  Geometric horizon · terrain occlusion is unavailable in Stage
-                  1.
+                  Geometric horizon · terrain occlusion is outside Stage 2.
                 </p>
               </fieldset>
               {validation && (

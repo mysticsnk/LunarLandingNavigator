@@ -2,9 +2,9 @@ openapi: 3.1.0
 info:
   title: Lunar Landing Site Navigator API v1
   version: 1.0.0
-  description: Agreed API v1 contract. Stage 1 implements health, catalog, CSA resources
-    and durable single-time geometric observation jobs. Map adapter registration is
-    an explicit handoff. Timeline, comparison and physical terrain occlusion remain
+  description: Agreed API v1 contract. Stage 2 implements health, catalog, CSA resources,
+    registered map imagery and durable single-time geometric observation jobs.
+    Timeline, comparison and physical terrain occlusion remain
     planned. Examples are synthetic development/test fixtures, not measured NASA results.
     See docs/API_V1.md and docs/CONTRACT_DECISIONS.md.
 paths:
@@ -123,7 +123,7 @@ paths:
                   summary: Development/test fixture; not measured NASA results
                   externalValue: ./examples/healthy.json
       description: Unknown request fields and query parameters are rejected. Responses
-        use UTC timestamps ending in Z. Implemented in Stage 1; observation submissions
+        use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions
         use geometric mode only.
       x-reject-unknown-query-parameters: true
   /api/v1/sites:
@@ -258,7 +258,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/SiteList'
       description: Unknown request fields and query parameters are rejected. Responses
-        use UTC timestamps ending in Z. Implemented in Stage 1; observation submissions
+        use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions
         use geometric mode only.
       x-reject-unknown-query-parameters: true
   /api/v1/sites/{site_id}:
@@ -375,14 +375,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/Site'
       description: Unknown request fields and query parameters are rejected. Responses
-        use UTC timestamps ending in Z. Implemented in Stage 1; observation submissions
+        use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions
         use geometric mode only.
       x-reject-unknown-query-parameters: true
   /api/v1/map/layers:
     get:
       operationId: listLayers
       summary: listLayers
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters: []
       responses:
         '400':
@@ -485,15 +485,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LayerList'
-      description: Planned contract only. Not registered by this Stage 1 backend unless
-        an external map router is explicitly supplied. Timeline, comparison and physical
-        terrain occlusion are excluded.
+      description: Implemented in Stage 2. This registered imagery route accepts only
+        known lunar layers; timeline, comparison and physical terrain occlusion are excluded.
       x-reject-unknown-query-parameters: true
   /api/v1/map/layers/{layer_id}:
     get:
       operationId: getLayer
       summary: getLayer
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters:
       - name: layer_id
         in: path
@@ -600,15 +599,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Layer'
-      description: Planned contract only. Not registered by this Stage 1 backend unless
-        an external map router is explicitly supplied. Timeline, comparison and physical
-        terrain occlusion are excluded.
+      description: Implemented in Stage 2. This registered imagery route accepts only
+        known lunar layers; timeline, comparison and physical terrain occlusion are excluded.
       x-reject-unknown-query-parameters: true
   /api/v1/map/layers/{layer_id}/tiles/{matrix}/{row}/{col}:
     get:
       operationId: getMapTile
       summary: getMapTile
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters:
       - name: layer_id
         in: path
@@ -736,15 +734,14 @@ paths:
               schema:
                 type: string
                 format: binary
-      description: Planned contract only. Not registered by this Stage 1 backend unless
-        an external map router is explicitly supplied. Timeline, comparison and physical
-        terrain occlusion are excluded.
+      description: Implemented in Stage 2. This registered imagery route accepts only
+        known lunar layers; timeline, comparison and physical terrain occlusion are excluded.
       x-reject-unknown-query-parameters: true
   /api/v1/map/layers/{layer_id}/image:
     get:
       operationId: getMapImage
       summary: getMapImage
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters:
       - name: layer_id
         in: path
@@ -878,9 +875,8 @@ paths:
               schema:
                 type: string
                 format: binary
-      description: Planned contract only. Not registered by this Stage 1 backend unless
-        an external map router is explicitly supplied. Timeline, comparison and physical
-        terrain occlusion are excluded.
+      description: Implemented in Stage 2. This registered imagery route accepts only
+        known lunar layers; timeline, comparison and physical terrain occlusion are excluded.
       x-reject-unknown-query-parameters: true
   /api/v1/terrain/coverage:
     get:
@@ -1007,9 +1003,8 @@ paths:
                 unavailable:
                   summary: Development/test fixture; not measured NASA results
                   externalValue: ./examples/terrain-unavailable.json
-      description: Planned contract only. Not registered by this Stage 1 backend unless
-        an external map router is explicitly supplied. Timeline, comparison and physical
-        terrain occlusion are excluded.
+      description: Planned contract only. Not registered by the Stage 2 backend.
+        Timeline, comparison and physical terrain occlusion are excluded.
       x-reject-unknown-query-parameters: true
   /api/v1/terrain/regions/{region_id}/heightmap:
     get:
@@ -1122,9 +1117,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Heightmap'
-      description: Planned contract only. Not registered by this Stage 1 backend unless
-        an external map router is explicitly supplied. Timeline, comparison and physical
-        terrain occlusion are excluded.
+      description: Planned contract only. Not registered by the Stage 2 backend.
+        Timeline, comparison and physical terrain occlusion are excluded.
       x-reject-unknown-query-parameters: true
   /api/v1/resources/csa:
     get:
@@ -1242,7 +1236,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/CSAResources'
       description: Unknown request fields and query parameters are rejected. Responses
-        use UTC timestamps ending in Z. Implemented in Stage 1; observation submissions
+        use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions
         use geometric mode only.
       x-reject-unknown-query-parameters: true
   /api/v1/ephemeris/now:
@@ -1364,7 +1358,7 @@ paths:
                   summary: Development/test fixture; not measured NASA results
                   externalValue: ./examples/job-accepted-now.json
       description: Unknown request fields and query parameters are rejected. Responses
-        use UTC timestamps ending in Z. Implemented in Stage 1; observation submissions
+        use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions
         use geometric mode only.
       requestBody:
         required: true
@@ -1491,9 +1485,8 @@ paths:
                 accepted:
                   summary: Development/test fixture; not measured NASA results
                   externalValue: ./examples/job-accepted.json
-      description: Planned contract only. Not registered by this Stage 1 backend unless
-        an external map router is explicitly supplied. Timeline, comparison and physical
-        terrain occlusion are excluded.
+      description: Planned contract only. Not registered by the Stage 2 backend.
+        Timeline, comparison and physical terrain occlusion are excluded.
       requestBody:
         required: true
         content:
@@ -1619,9 +1612,8 @@ paths:
                 accepted:
                   summary: Development/test fixture; not measured NASA results
                   externalValue: ./examples/job-accepted-comparison.json
-      description: Planned contract only. Not registered by this Stage 1 backend unless
-        an external map router is explicitly supplied. Timeline, comparison and physical
-        terrain occlusion are excluded.
+      description: Planned contract only. Not registered by the Stage 2 backend.
+        Timeline, comparison and physical terrain occlusion are excluded.
       requestBody:
         required: true
         content:
@@ -1757,7 +1749,7 @@ paths:
                   summary: Development/test fixture; not measured NASA results
                   externalValue: ./examples/job-failed.json
       description: Unknown request fields and query parameters are rejected. Responses
-        use UTC timestamps ending in Z. Implemented in Stage 1; observation submissions
+        use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions
         use geometric mode only.
       x-reject-unknown-query-parameters: true
   /api/v1/jobs/{job_id}/result:
@@ -1913,7 +1905,7 @@ paths:
                   summary: Development/test fixture; synthetic values
                   externalValue: ./examples/comparison-result.json
       description: Unknown request fields and query parameters are rejected. Responses
-        use UTC timestamps ending in Z. Implemented in Stage 1; observation submissions
+        use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions
         use geometric mode only.
       x-reject-unknown-query-parameters: true
 components:

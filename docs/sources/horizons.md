@@ -93,7 +93,8 @@ uv run --locked python tools/probe_horizons.py \
    - $\text{up} = \sin(\text{elevation})$
    and Three.js coordinates: ($x=\text{east}, y=\text{up}, z=-\text{north}$).
 4. **Horizon Intersection & Golden Windows:** Combine Horizons geometric body
-   elevations with geometric horizon (0°) or terrain horizon to compute visibility.
+   elevations with the geometric horizon (0°) to compute visibility. Physical
+   terrain horizons are outside the Stage 2 scope; terrain requests fail explicitly.
 
 ## 6. Diagnostic Probe Payload
 

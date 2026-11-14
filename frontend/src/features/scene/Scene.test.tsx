@@ -274,12 +274,12 @@ describe('LunarScene component and coordinate orientation', () => {
     expect(screen.getByTestId('hud-sun-label')).toHaveTextContent(/El 4.5°/)
   })
 
-  it('displays geometric horizon reference notice indicating no terrain occlusion in Stage 1', () => {
+  it('displays geometric horizon reference notice indicating no terrain occlusion in Stage 2', () => {
     render(<LunarScene />)
     const notice = screen.getByTestId('scene-horizon-notice')
     expect(notice).toHaveTextContent(
       /Geometric Reference Horizon \(Elevation 0.0°\)/,
     )
-    expect(notice).toHaveTextContent(/Terrain occlusion not modeled in Stage 1/)
+    expect(notice).toHaveTextContent(/Terrain occlusion not modeled in Stage 2/)
   })
 })

@@ -1,5 +1,5 @@
 /**
- * Types for 3D Lunar Local Scene Visualization (Stage 1)
+ * Types for 3D Lunar Local Scene Visualization (Stage 2)
  */
 
 import type { EnuVector } from '../../lib/coordinates'
@@ -46,7 +46,7 @@ export interface LunarSceneProps {
    */
   timestamp?: string | null
   /**
-   * Reserved for Stage 2 physical terrain elevation heightmap.
+   * Reserved for a future physical terrain elevation heightmap.
    */
   heightmap?: unknown | null
   /**

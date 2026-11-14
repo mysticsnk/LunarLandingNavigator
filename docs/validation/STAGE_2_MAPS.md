@@ -2,11 +2,12 @@
 
 Date: 2026-11-14
 
-This validation checks the registered map services and the Stage 1 coordinate
+This validation checks the registered map services and the Stage 2 coordinate
 path. It does not validate terrain horizons or replace the agreed API contract.
-No shared Stage 2 control-case file was present in `docs/`, `contracts/`,
-`backend/tests/`, or `frontend/src/`; the project input `222.1°E` example and
-the catalog Shackleton coordinate were used as the deterministic control.
+No standalone shared Stage 2 control-case data file is defined. The deterministic
+control uses the project input `222.1°E` example and catalog Shackleton coordinate;
+the observation workflow cases are recorded in
+`backend/tests/test_stage2_observation_workflow.py`.
 
 ## Registered layers and source evidence
 

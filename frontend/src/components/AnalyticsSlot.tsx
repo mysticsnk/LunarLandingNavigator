@@ -13,7 +13,7 @@ export const AnalyticsSlot: React.FC<AnalyticsSlotProps> = ({ className = '' }) 
     <section className={`slot-container analytics-slot ${className}`} data-testid="analytics-slot">
       <div className="slot-header">
         <h3 className="slot-title">Mission Timeline & Visibility Analytics</h3>
-        <span className="slot-badge planned-badge">Stage 1 Planned</span>
+        <span className="slot-badge planned-badge">Planned for a later stage</span>
       </div>
       <div className="slot-body placeholder-body">
         <div className="slot-icon" aria-hidden="true">
@@ -26,7 +26,7 @@ export const AnalyticsSlot: React.FC<AnalyticsSlotProps> = ({ className = '' }) 
         </div>
         <p className="slot-heading">Timeline & Analysis Panel</p>
         <p className="slot-description">
-          Awaiting real calculation results from Stage 1 backend endpoints. No simulated or fabricated operational values are displayed prior to real data arrival.
+          Timeline and comparison endpoints are not part of Stage 2. No simulated or fabricated operational values are displayed.
         </p>
         <div className="slot-metadata">
           <span>Golden Windows: None (Awaiting Calculation)</span>
