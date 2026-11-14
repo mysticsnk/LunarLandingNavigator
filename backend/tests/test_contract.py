@@ -123,6 +123,7 @@ def test_all_agreed_routes_are_documented_and_runtime_status_is_explicit():
                     "/api/v1/map/layers/{layer_id}/image",
                     "/api/v1/resources/csa",
                     "/api/v1/ephemeris/now",
+                    "/api/v1/ephemeris/timeline",
                     "/api/v1/jobs/{job_id}",
                     "/api/v1/jobs/{job_id}/result",
                 }

@@ -1,0 +1,32 @@
+{
+  "fixture_status": "synthetic controlled acceptance states; not provider observations",
+  "start_time": "2027-07-01T00:00:00Z",
+  "end_time": "2027-07-01T12:00:00Z",
+  "step_hours": 2,
+  "sample_offsets_hours": [0, 2, 4, 6, 8, 10],
+  "golden_case": {
+    "sun_visible": [true, true, true, true, true, false],
+    "earth_visible": [true, true, false, true, true, true],
+    "golden_states": [true, true, false, true, true, false],
+    "golden_windows_offsets_hours": [[0, 4], [6, 10]],
+    "sunlit_hours": 10,
+    "earth_visible_hours": 10,
+    "golden_hours": 8,
+    "longest_golden_window_hours": 4
+  },
+  "different_body_sequences": {
+    "sun_visible": [true, true, false, false, true, true],
+    "earth_visible": [true, false, true, true, true, false],
+    "golden_states": [true, false, false, false, true, false],
+    "sunlight_windows_offsets_hours": [[0, 4], [8, 12]],
+    "earth_windows_offsets_hours": [[0, 2], [4, 10]],
+    "golden_windows_offsets_hours": [[0, 2], [8, 10]]
+  },
+  "topology_cases": [
+    {"name": "all_false", "states": [false, false, false, false, false, false], "windows_offsets_hours": [], "golden_hours": 0, "longest_golden_window_hours": 0},
+    {"name": "all_true", "states": [true, true, true, true, true, true], "windows_offsets_hours": [[0, 12]], "golden_hours": 12, "longest_golden_window_hours": 12},
+    {"name": "only_first_interval_true", "states": [true, false, false, false, false, false], "windows_offsets_hours": [[0, 2]], "golden_hours": 2, "longest_golden_window_hours": 2},
+    {"name": "only_last_interval_true", "states": [false, false, false, false, false, true], "windows_offsets_hours": [[10, 12]], "golden_hours": 2, "longest_golden_window_hours": 2},
+    {"name": "alternating", "states": [true, false, true, false, true, false], "windows_offsets_hours": [[0, 2], [4, 6], [8, 10]], "golden_hours": 6, "longest_golden_window_hours": 2}
+  ]
+}

@@ -11,11 +11,12 @@ from app.astronomy import (
     HorizonsProvider,
     HorizonsTransportError,
     calculate_geometric_observation,
+    calculate_geometric_timeline,
 )
 from app.core.config import get_settings
 from app.core.problems import APIProblem
 from app.requests import canonical_time
-from app.results import NowResult
+from app.results import NowResult, TimelineResult
 from app.storage import MODEL_VERSION, get_repository, iso, utcnow
 
 LOGGER = logging.getLogger(__name__)
@@ -53,6 +54,53 @@ def execute_observation(normalized):
     }
 
 
+def execute_timeline(normalized, provider=None):
+    settings = get_settings()
+    timeline = calculate_geometric_timeline(
+        latitude=normalized["site"]["latitude"],
+        longitude=normalized["site"]["longitude"],
+        start_time=normalized["start_time"],
+        duration_days=normalized["duration_days"],
+        step_minutes=normalized["step_minutes"],
+        observer_height_m=normalized["observer_height_m"],
+        visibility_margin_deg=normalized["visibility_margin_deg"],
+        provider=provider
+        or HorizonsProvider(timeout=settings.horizons_timeout_seconds, max_retries=1),
+    )
+    if (
+        canonical_time(timeline.start_time) != normalized["start_time"]
+        or canonical_time(timeline.end_time) != normalized["end_time"]
+        or timeline.step_minutes != normalized["step_minutes"]
+    ):
+        raise APIProblem(
+            502, "PROVIDER_TIME_MISMATCH", "Astronomy service changed the requested timeline"
+        )
+    if not timeline.sources:
+        raise APIProblem(502, "PROVIDER_ERROR", "Astronomy service returned no provenance")
+    return {
+        **timeline.model_dump(mode="json"),
+        "site": normalized["site"],
+        "meta": {
+            "model_version": normalized["model_version"],
+            "generated_at": iso(utcnow()),
+            "data_status": "fresh",
+            "horizon_mode": "geometric",
+            "time_resolution_minutes": normalized["step_minutes"],
+            "terrain_dataset_id": None,
+            "sources": [source.to_contract_source() for source in timeline.sources],
+        },
+    }
+
+
+def execute_job(normalized):
+    kind = normalized.get("kind", "now")
+    if kind == "now":
+        return execute_observation(normalized)
+    if kind == "timeline":
+        return execute_timeline(normalized)
+    raise APIProblem(500, "INTERNAL_ERROR", "Unknown calculation job kind")
+
+
 def calculation_error(exc):
     if isinstance(exc, APIProblem):
         return exc
@@ -69,7 +117,7 @@ def calculation_error(exc):
 
 def _child(normalized, sender):
     try:
-        sender.send((execute_observation(normalized), None))
+        sender.send((execute_job(normalized), None))
     except Exception as exc:
         problem = calculation_error(exc)
         sender.send((None, (problem.status, problem.code, problem.message, problem.details)))
@@ -124,7 +172,8 @@ def run_once(repository, executor=isolated_execution):
                 result["meta"]["data_status"] = "cached"
             else:
                 result = executor(job["normalized"])
-            result = NowResult.model_validate(result).model_dump(mode="json")
+            result_model = TimelineResult if job["kind"] == "timeline" else NowResult
+            result = result_model.model_validate(result).model_dump(mode="json")
             repository.finish(
                 job,
                 result=result,
@@ -141,7 +190,7 @@ def run_once(repository, executor=isolated_execution):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Durable single-observation PostgreSQL worker")
+    parser = argparse.ArgumentParser(description="Durable ephemeris PostgreSQL worker")
     parser.add_argument("--once", action="store_true", help="Process at most one job, then exit")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)

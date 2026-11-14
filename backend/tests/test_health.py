@@ -121,13 +121,14 @@ def test_unexpected_failure_has_safe_complete_error_envelope():
     assert "sensitive internals" not in response.text
 
 
-def test_runtime_registers_only_stage1_product_routes(client):
+def test_runtime_registers_stage3_timeline_route(client):
     assert set(client.get("/openapi.json").json()["paths"]) == {
         "/api/v1/health",
         "/api/v1/sites",
         "/api/v1/sites/{site_id}",
         "/api/v1/resources/csa",
         "/api/v1/ephemeris/now",
+        "/api/v1/ephemeris/timeline",
         "/api/v1/jobs/{job_id}",
         "/api/v1/jobs/{job_id}/result",
         "/api/v1/map/layers",
@@ -135,10 +136,7 @@ def test_runtime_registers_only_stage1_product_routes(client):
         "/api/v1/map/layers/{layer_id}/image",
         "/api/v1/map/layers/{layer_id}/tiles/{matrix}/{row}/{col}",
     }
-    for method, path in (
-        ("POST", "/api/v1/ephemeris/timeline"),
-        ("POST", "/api/v1/ephemeris/compare"),
-    ):
+    for method, path in (("POST", "/api/v1/ephemeris/compare"),):
         response = client.request(method, path)
         assert response.status_code == 404
         assert_error(response, "HTTP_404")

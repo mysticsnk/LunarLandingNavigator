@@ -2,9 +2,9 @@ openapi: 3.1.0
 info:
   title: Lunar Landing Site Navigator API v1
   version: 1.0.0
-  description: Agreed API v1 contract. Stage 2 implements health, catalog, CSA resources,
-    registered map imagery and durable single-time geometric observation jobs.
-    Timeline, comparison and physical terrain occlusion remain
+  description: Agreed API v1 contract. Stage 3 implements multi-day geometric timeline
+    jobs alongside the Stage 2 health, catalog, CSA, map, and single-time observation
+    routes. Comparison and physical terrain occlusion remain
     planned. Examples are synthetic development/test fixtures, not measured NASA results.
     See docs/API_V1.md and docs/CONTRACT_DECISIONS.md.
 paths:
@@ -1371,7 +1371,7 @@ paths:
     post:
       operationId: submitTimelineRequest
       summary: submitTimelineRequest
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters: []
       responses:
         '400':
@@ -1485,8 +1485,8 @@ paths:
                 accepted:
                   summary: Development/test fixture; not measured NASA results
                   externalValue: ./examples/job-accepted.json
-      description: Planned contract only. Not registered by the Stage 2 backend.
-        Timeline, comparison and physical terrain occlusion are excluded.
+      description: Implemented in Stage 3. Timeline calculations use geometric mode;
+        comparison and physical terrain occlusion remain unimplemented.
       requestBody:
         required: true
         content:
@@ -1749,7 +1749,7 @@ paths:
                   summary: Development/test fixture; not measured NASA results
                   externalValue: ./examples/job-failed.json
       description: Unknown request fields and query parameters are rejected. Responses
-        use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions
+        use UTC timestamps ending in Z. Implemented in Stage 3; now and timeline jobs
         use geometric mode only.
       x-reject-unknown-query-parameters: true
   /api/v1/jobs/{job_id}/result:
