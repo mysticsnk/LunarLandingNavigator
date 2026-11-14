@@ -407,3 +407,18 @@ def test_provider_preserves_unknown_ephemeris_version_as_null():
             target_time="2027-07-15T12:00:00Z",
         )
     assert observation.ephemeris_source is None
+
+
+def test_provider_rejects_inconsistent_timestamp():
+    # Horizons returned row with 12:01:00 when 12:00:00 was requested
+    body = {"result": "Synthetic parser fixture\n$$SOE\n2027-Jul-15 12:01:00, , , 100, 10,\n$$EOE"}
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=body))
+    ) as client:
+        with pytest.raises(HorizonsParseError, match="returned timestamp.*expected"):
+            HorizonsProvider(client=client).query_body(
+                target="Sun",
+                latitude=0,
+                longitude=0,
+                target_time="2027-07-15T12:00:00Z",
+            )
