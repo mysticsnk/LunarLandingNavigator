@@ -144,6 +144,57 @@ describe('LunarScene component and coordinate orientation', () => {
     expect(screen.queryByTestId('hud-sun-label')).toBeNull()
     expect(screen.getByText('Sun: Awaiting vector')).toBeInTheDocument()
   })
+
+  it('rejects invalid or non-unit ENU vectors safely without crashing', () => {
+    render(
+      <LunarScene
+        sunDirectionEnu={{ east: 2.0, north: 0, up: 0 }}
+        earthDirectionEnu={{ east: Number.NaN, north: 0, up: 0 }}
+      />,
+    )
+    expect(screen.getByText('Sun: Awaiting vector')).toBeInTheDocument()
+    expect(screen.getByText('Earth: Awaiting vector')).toBeInTheDocument()
+  })
+
+  it('maps all six cardinal ENU directions to agreed 3D scene coordinates', () => {
+    // East: [1, 0, 0] -> [1, 0, 0]
+    expect(enuToLocalScene({ east: 1, north: 0, up: 0 })).toEqual({
+      x: 1,
+      y: 0,
+      z: -0,
+    })
+    // North: [0, 1, 0] -> [0, 0, -1]
+    expect(enuToLocalScene({ east: 0, north: 1, up: 0 })).toEqual({
+      x: 0,
+      y: 0,
+      z: -1,
+    })
+    // Up / Zenith: [0, 0, 1] -> [0, 1, 0]
+    expect(enuToLocalScene({ east: 0, north: 0, up: 1 })).toEqual({
+      x: 0,
+      y: 1,
+      z: -0,
+    })
+    // West: [-1, 0, 0] -> [-1, 0, 0]
+    expect(enuToLocalScene({ east: -1, north: 0, up: 0 })).toEqual({
+      x: -1,
+      y: 0,
+      z: -0,
+    })
+    // South: [0, -1, 0] -> [0, 0, 1]
+    expect(enuToLocalScene({ east: 0, north: -1, up: 0 })).toEqual({
+      x: 0,
+      y: 0,
+      z: 1,
+    })
+    // Down / Nadir: [0, 0, -1] -> [0, -1, 0]
+    expect(enuToLocalScene({ east: 0, north: 0, up: -1 })).toEqual({
+      x: 0,
+      y: -1,
+      z: -0,
+    })
+  })
+
   it('applies agreed scene orientation (scene.x = east, scene.y = up, scene.z = -north)', () => {
     // East: (1, 0, 0)
     const eastScene = enuToLocalScene({ east: 1, north: 0, up: 0 })
