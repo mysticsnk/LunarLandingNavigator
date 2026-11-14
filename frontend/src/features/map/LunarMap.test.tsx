@@ -165,8 +165,7 @@ describe('LunarMap component', () => {
   })
 
   it('displays verified QuickMap link without inventing query parameters', () => {
-    const verifiedQuickmapUrl =
-      'https://quickmap.lroc.asu.edu/?extent=-89.5,221,-89.3,223'
+    const verifiedQuickmapUrl = 'https://quickmap.lroc.im-ldi.com/'
     render(<LunarMap quickmapUrl={verifiedQuickmapUrl} />)
 
     const link = screen.getByTestId('quickmap-link')
