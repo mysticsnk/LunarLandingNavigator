@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -24,6 +25,9 @@ from app.astronomy.observation import (
     SourceMetadata,
     calculate_direction_enu,
 )
+
+if TYPE_CHECKING:
+    from app.terrain.horizon import HorizonResult, TerrainHorizonService
 
 ALLOWED_STEP_MINUTES = (15, 30, 60, 120, 180, 360)
 
@@ -73,6 +77,8 @@ class TimelineCalculationResult(BaseModel):
     golden_windows: list[Window]
     summary: Summary
     sources: list[SourceMetadata] = Field(default_factory=list, exclude=True)
+    surface_elevation_m: float = Field(default=0.0, exclude=True)
+    terrain_dataset_id: str | None = Field(default=None, exclude=True)
 
 
 def generate_time_grid(
@@ -347,3 +353,217 @@ def calculate_geometric_timeline(
         summary=summary,
         sources=sources,
     )
+
+
+def calculate_terrain_timeline(
+    *,
+    latitude: float,
+    longitude: float,
+    start_time: datetime | str,
+    duration_days: int,
+    step_minutes: int,
+    terrain_service: TerrainHorizonService,
+    observer_height_m: float = 2.0,
+    visibility_margin_deg: float = 0.0,
+    provider: HorizonsProvider | None = None,
+) -> TimelineCalculationResult:
+    """Calculate multi-day terrain-aware observation timeline for Sun and Earth."""
+    if not math.isfinite(latitude) or not -90.0 <= latitude <= 90.0:
+        raise ValueError("Latitude must be a finite number between -90 and 90 degrees")
+
+    if not math.isfinite(longitude) or not -180.0 <= longitude < 360.0:
+        raise ValueError("Longitude must be a finite number in [-180, 360) degrees")
+
+    if not math.isfinite(observer_height_m) or not 0.0 <= observer_height_m <= 20.0:
+        raise ValueError("observer_height_m must be between 0 and 20 metres")
+
+    if not math.isfinite(visibility_margin_deg) or not 0.0 <= visibility_margin_deg <= 5.0:
+        raise ValueError("visibility_margin_deg must be between 0 and 5 degrees")
+
+    time_grid = generate_time_grid(start_time, duration_days, step_minutes)
+    dt_start = time_grid[0]
+    dt_end = dt_start + timedelta(days=duration_days)
+    step = timedelta(minutes=step_minutes)
+
+    norm_lon = normalize_longitude(longitude)
+    obs_surface = terrain_service.observer_surface
+    actual_altitude_m = obs_surface.surface_elevation_m + observer_height_m
+
+    active_provider = provider if provider is not None else HorizonsProvider()
+
+    sun_series = active_provider.query_body_series(
+        target="Sun",
+        latitude=latitude,
+        longitude=norm_lon,
+        altitude_m=actual_altitude_m,
+        start_time=dt_start,
+        stop_time=dt_end,
+        step_minutes=step_minutes,
+    )
+    earth_series = active_provider.query_body_series(
+        target="Earth",
+        latitude=latitude,
+        longitude=norm_lon,
+        altitude_m=actual_altitude_m,
+        start_time=dt_start,
+        stop_time=dt_end,
+        step_minutes=step_minutes,
+    )
+
+    if len(sun_series) != len(earth_series):
+        raise HorizonsParseError(
+            f"Incompatible Sun and Earth series lengths: {len(sun_series)} vs {len(earth_series)}"
+        )
+    for s_obs, e_obs in zip(sun_series, earth_series, strict=True):
+        if s_obs.timestamp != e_obs.timestamp:
+            raise HorizonsParseError(
+                f"Incompatible Sun and Earth timestamps: {s_obs.timestamp} vs {e_obs.timestamp}"
+            )
+
+    points: list[ObservationPoint] = []
+    sun_flags: list[bool] = []
+    earth_flags: list[bool] = []
+    golden_flags: list[bool] = []
+
+    horizon_cache: dict[float, HorizonResult] = {}
+
+    def _get_horizon(az_deg: float) -> HorizonResult:
+        key = round(az_deg % 360.0, 6)
+        if key not in horizon_cache:
+            horizon_cache[key] = terrain_service.horizon_elevation(az_deg)
+        return horizon_cache[key]
+
+    for s_obs, e_obs in zip(sun_series, earth_series, strict=True):
+        sun_enu = calculate_direction_enu(s_obs.azimuth_deg, s_obs.elevation_deg)
+        earth_enu = calculate_direction_enu(e_obs.azimuth_deg, e_obs.elevation_deg)
+
+        sun_horizon = _get_horizon(s_obs.azimuth_deg)
+        earth_horizon = _get_horizon(e_obs.azimuth_deg)
+
+        sun_horizon_deg = sun_horizon.horizon_elevation_deg
+        earth_horizon_deg = earth_horizon.horizon_elevation_deg
+
+        sun_vis = s_obs.elevation_deg > (sun_horizon_deg + visibility_margin_deg)
+        earth_vis = e_obs.elevation_deg > (earth_horizon_deg + visibility_margin_deg)
+        golden = sun_vis and earth_vis
+
+        sun_flags.append(sun_vis)
+        earth_flags.append(earth_vis)
+        golden_flags.append(golden)
+
+        points.append(
+            ObservationPoint(
+                timestamp=s_obs.timestamp,
+                sun=BodyObservation(
+                    azimuth_deg=s_obs.azimuth_deg,
+                    elevation_deg=s_obs.elevation_deg,
+                    horizon_elevation_deg=sun_horizon_deg,
+                    visible=sun_vis,
+                    direction_enu=sun_enu,
+                ),
+                earth=BodyObservation(
+                    azimuth_deg=e_obs.azimuth_deg,
+                    elevation_deg=e_obs.elevation_deg,
+                    horizon_elevation_deg=earth_horizon_deg,
+                    visible=earth_vis,
+                    direction_enu=earth_enu,
+                ),
+                is_golden_window=golden,
+                surface_elevation_m=obs_surface.surface_elevation_m,
+                terrain_dataset_id=obs_surface.dataset_id,
+            )
+        )
+
+    sunlight_windows = detect_continuous_windows(time_grid, sun_flags, step, dt_end)
+    earth_visibility_windows = detect_continuous_windows(time_grid, earth_flags, step, dt_end)
+    golden_windows = detect_continuous_windows(time_grid, golden_flags, step, dt_end)
+
+    total_period_hours = (dt_end - dt_start).total_seconds() / 3600.0
+    summary = calculate_timeline_summary(
+        points=points,
+        sunlight_windows=sunlight_windows,
+        earth_visibility_windows=earth_visibility_windows,
+        golden_windows=golden_windows,
+        total_period_hours=total_period_hours,
+    )
+
+    sources = (
+        [
+            SourceMetadata(
+                name=sun_series[0].provider_name,
+                url=sun_series[0].source_url,
+                version=sun_series[0].ephemeris_source,
+                fetched_at=sun_series[0].retrieval_time,
+                target="Sun",
+                settings=sun_series[0].request_params,
+            ),
+            SourceMetadata(
+                name=earth_series[0].provider_name,
+                url=earth_series[0].source_url,
+                version=earth_series[0].ephemeris_source,
+                fetched_at=earth_series[0].retrieval_time,
+                target="Earth",
+                settings=earth_series[0].request_params,
+            ),
+        ]
+        if sun_series and earth_series
+        else []
+    )
+
+    return TimelineCalculationResult(
+        start_time=dt_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        end_time=dt_end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        step_minutes=step_minutes,
+        total_samples=len(points),
+        points=points,
+        sunlight_windows=sunlight_windows,
+        earth_visibility_windows=earth_visibility_windows,
+        golden_windows=golden_windows,
+        summary=summary,
+        sources=sources,
+        surface_elevation_m=obs_surface.surface_elevation_m,
+        terrain_dataset_id=obs_surface.dataset_id,
+    )
+
+
+def calculate_timeline(
+    *,
+    latitude: float,
+    longitude: float,
+    start_time: datetime | str,
+    duration_days: int,
+    step_minutes: int,
+    horizon_mode: Literal["geometric", "terrain"] = "geometric",
+    terrain_service: TerrainHorizonService | None = None,
+    observer_height_m: float = 2.0,
+    visibility_margin_deg: float = 0.0,
+    provider: HorizonsProvider | None = None,
+) -> TimelineCalculationResult:
+    """Calculate multi-day timeline supporting both geometric and terrain modes."""
+    if horizon_mode == "geometric":
+        return calculate_geometric_timeline(
+            latitude=latitude,
+            longitude=longitude,
+            start_time=start_time,
+            duration_days=duration_days,
+            step_minutes=step_minutes,
+            observer_height_m=observer_height_m,
+            visibility_margin_deg=visibility_margin_deg,
+            provider=provider,
+        )
+    elif horizon_mode == "terrain":
+        if terrain_service is None:
+            raise ValueError("terrain_service is required when horizon_mode is 'terrain'")
+        return calculate_terrain_timeline(
+            latitude=latitude,
+            longitude=longitude,
+            start_time=start_time,
+            duration_days=duration_days,
+            step_minutes=step_minutes,
+            terrain_service=terrain_service,
+            observer_height_m=observer_height_m,
+            visibility_margin_deg=visibility_margin_deg,
+            provider=provider,
+        )
+    else:
+        raise ValueError(f"Unsupported horizon_mode '{horizon_mode}'")

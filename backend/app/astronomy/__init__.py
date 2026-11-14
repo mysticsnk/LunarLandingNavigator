@@ -23,6 +23,8 @@ from app.astronomy.observation import (
     SourceMetadata,
     calculate_direction_enu,
     calculate_geometric_observation,
+    calculate_observation,
+    calculate_terrain_observation,
 )
 from app.astronomy.timeline import (
     ALLOWED_STEP_MINUTES,
@@ -31,6 +33,8 @@ from app.astronomy.timeline import (
     TimelineSummary,
     Window,
     calculate_geometric_timeline,
+    calculate_terrain_timeline,
+    calculate_timeline,
     calculate_timeline_summary,
     detect_continuous_windows,
     generate_time_grid,
@@ -58,6 +62,10 @@ __all__ = [
     "calculate_direction_enu",
     "calculate_geometric_observation",
     "calculate_geometric_timeline",
+    "calculate_observation",
+    "calculate_terrain_observation",
+    "calculate_terrain_timeline",
+    "calculate_timeline",
     "calculate_timeline_summary",
     "detect_continuous_windows",
     "generate_time_grid",
