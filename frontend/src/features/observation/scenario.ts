@@ -1,4 +1,4 @@
-import type { NowRequest, Site } from '../../api/types'
+import type { NowRequest, Site, TimelineRequest } from '../../api/types'
 
 export interface ScenarioDraft {
   mode: 'catalog' | 'custom'
@@ -7,6 +7,8 @@ export interface ScenarioDraft {
   latitude: string
   longitude: string
   utcTime: string
+  durationDays: string
+  stepMinutes: string
   height: string
   margin: string
 }
@@ -19,6 +21,8 @@ export function initialScenario(): ScenarioDraft {
     latitude: '',
     longitude: '',
     utcTime: new Date().toISOString().slice(0, 19),
+    durationDays: '14',
+    stepMinutes: '120',
     height: '2',
     margin: '0',
   }
@@ -92,5 +96,24 @@ export function buildRequest(draft: ScenarioDraft): NowRequest {
     horizon_mode: 'geometric',
     observer_height_m,
     visibility_margin_deg,
+  }
+}
+
+export function buildTimelineRequest(draft: ScenarioDraft): TimelineRequest {
+  const { target_time, ...shared } = buildRequest(draft)
+  const duration_days = Number(draft.durationDays)
+  if (!Number.isInteger(duration_days) || duration_days < 1 || duration_days > 30)
+    throw new Error('Duration must be a whole number from 1 to 30 days.')
+  const step_minutes = Number(draft.stepMinutes)
+  if (![15, 30, 60, 120, 180, 360].includes(step_minutes))
+    throw new Error('Choose a supported sampling step.')
+  const endTime = Date.parse(target_time) + duration_days * 86_400_000
+  if (endTime > Date.parse('2050-01-01T00:00:00Z'))
+    throw new Error('The requested period must end by 2050-01-01T00:00:00Z.')
+  return {
+    ...shared,
+    start_time: target_time,
+    duration_days,
+    step_minutes: step_minutes as TimelineRequest['step_minutes'],
   }
 }
