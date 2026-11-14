@@ -302,4 +302,31 @@ describe('Stage 1 observation workspace', () => {
     fireEvent.click(screen.getByLabelText('Custom coordinates'))
     expect(screen.getByLabelText('Latitude (°)')).toBeInTheDocument()
   })
+  it('preserves observation results and visual state when CSA resources fail independently', async () => {
+    vi.mocked(apiClient.getResources).mockRejectedValue(
+      new ApiClientError({
+        code: 'CSA_UNAVAILABLE',
+        message: 'CSA feed unavailable',
+      }),
+    )
+    render(<App />)
+    await selectCatalog()
+    vi.useFakeTimers()
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Request observation' }),
+      )
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000)
+    })
+    // Observation succeeds and renders despite CSA failure
+    expect(screen.getByText('Observation ready')).toBeInTheDocument()
+    expect(
+      screen.getByText('Synthetic development site'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('CSA feed unavailable')).toBeInTheDocument()
+    expect(visual.map).toHaveBeenCalled()
+    expect(visual.scene).toHaveBeenCalled()
+  })
 })
