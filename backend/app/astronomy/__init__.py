@@ -1,5 +1,16 @@
 """Astronomy observation package for Lunar Landing Site Navigator."""
 
+from app.astronomy.comparison import (
+    ComparisonResult,
+    RankedScenario,
+    ScenarioEvaluationInput,
+    build_recommendation_reason,
+    calculate_v1_score,
+    evaluate_comparison,
+    evaluate_scenarios,
+    rank_scenarios,
+    validate_summary_metrics,
+)
 from app.astronomy.horizons import (
     HORIZONS_API_URL,
     EphemerisObservation,
@@ -43,6 +54,7 @@ from app.astronomy.timeline import (
 __all__ = [
     "ALLOWED_STEP_MINUTES",
     "BodyObservation",
+    "ComparisonResult",
     "DirectionENU",
     "EphemerisObservation",
     "HORIZONS_API_URL",
@@ -54,11 +66,14 @@ __all__ = [
     "HorizonsTransportError",
     "ObservationPoint",
     "Point",
+    "RankedScenario",
+    "ScenarioEvaluationInput",
     "SourceMetadata",
     "Summary",
     "TimelineCalculationResult",
     "TimelineSummary",
     "Window",
+    "build_recommendation_reason",
     "calculate_direction_enu",
     "calculate_geometric_observation",
     "calculate_geometric_timeline",
@@ -67,11 +82,16 @@ __all__ = [
     "calculate_terrain_timeline",
     "calculate_timeline",
     "calculate_timeline_summary",
+    "calculate_v1_score",
     "detect_continuous_windows",
+    "evaluate_comparison",
+    "evaluate_scenarios",
     "generate_time_grid",
     "meters_to_km",
     "normalize_longitude",
     "parse_horizons_response",
     "parse_horizons_timestamp",
     "parse_observation_row",
+    "rank_scenarios",
+    "validate_summary_metrics",
 ]
