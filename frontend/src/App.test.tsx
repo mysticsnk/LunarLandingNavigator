@@ -379,12 +379,9 @@ describe('Lunar Navigator workstation', () => {
     expect(screen.getByText('Observation ready')).toBeInTheDocument()
     const section = screen.getByRole('region', { name: 'Observation' })
     expect(within(section).getByText('cached')).toBeInTheDocument()
-    expect(
-      within(section).getByText('Synthetic development site'),
-    ).toBeInTheDocument()
-    expect(
-      within(section).getByText(/-89.44° latitude, -137.9° east/),
-    ).toBeInTheDocument()
+    const inspector = screen.getByRole('region', { name: 'Site inspector' })
+    expect(within(inspector).getByText('Synthetic development site')).toBeInTheDocument()
+    expect(within(inspector).getByText(/-89.44° latitude, -137.9° east longitude/)).toBeInTheDocument()
     expect(
       within(section).getByText('2027-07-15T00:00:00Z (UTC)'),
     ).toBeInTheDocument()
@@ -503,7 +500,7 @@ describe('Lunar Navigator workstation', () => {
     // Observation succeeds and renders despite CSA failure
     expect(screen.getByText('Observation ready')).toBeInTheDocument()
     expect(
-      screen.getByText('Synthetic development site'),
+      within(screen.getByRole('region', { name: 'Site inspector' })).getByText('Synthetic development site'),
     ).toBeInTheDocument()
     expect(screen.getByText('CSA feed unavailable')).toBeInTheDocument()
     expect(visual.map).toHaveBeenCalled()

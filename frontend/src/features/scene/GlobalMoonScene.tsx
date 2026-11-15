@@ -240,8 +240,12 @@ const GlobalSceneContent: React.FC<SceneContentProps> = ({
   observationPoint,
   cameraPreset,
 }) => {
-  const moonTexture = useLoader(THREE.TextureLoader, '/assets/lroc_color_2k.jpg')
-  moonTexture.colorSpace = THREE.SRGBColorSpace
+  const sourceTexture = useLoader(THREE.TextureLoader, '/assets/lroc_color_2k.jpg')
+  const moonTexture = useMemo(() => {
+    const texture = sourceTexture.clone()
+    texture.colorSpace = THREE.SRGBColorSpace
+    return texture
+  }, [sourceTexture])
 
   // Selected site position in global scene coordinates
   const sitePos = useMemo(() => {
