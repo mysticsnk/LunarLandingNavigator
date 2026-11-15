@@ -3,6 +3,7 @@ import { Canvas } from '@react-three/fiber'
 import * as THREE from 'three'
 import { enuToLocalScene, isValidDirectionVector } from '../../lib/coordinates'
 import { SceneErrorBoundary } from './SceneErrorBoundary'
+import { buildTerrainGeometry, getLocalSurfaceElevationAtOrigin } from './terrainMesh'
 import type { LunarSceneProps } from './types'
 
 /**
@@ -109,11 +110,14 @@ const GeometricHorizonReference: React.FC<{ radius?: number }> = ({
  * Observer Marker:
  * Cylinder / sphere marker at observer height above ground.
  */
-const ObserverMarker: React.FC<{ heightM?: number }> = ({ heightM = 2 }) => {
+const ObserverMarker: React.FC<{ heightM?: number; positionY?: number }> = ({
+  heightM = 2,
+  positionY = 0,
+}) => {
   const visualHeight = Math.max(0.1, Math.min(heightM * 0.2, 1.5))
 
   return (
-    <group position={[0, visualHeight / 2, 0]} data-testid="observer-marker">
+    <group position={[0, positionY + visualHeight / 2, 0]} data-testid="observer-marker">
       <mesh>
         <cylinderGeometry args={[0.08, 0.08, visualHeight, 16]} />
         <meshStandardMaterial color="#d9d9d9" roughness={0.3} />
@@ -188,8 +192,34 @@ const SceneContent: React.FC<{
   earthDirection: { x: number; y: number; z: number } | null
   observerHeightM: number
   visualScale: number
-}> = ({ sunDirection, earthDirection, observerHeightM, visualScale }) => {
+  heightmap?: LunarSceneProps['heightmap']
+  visualExaggeration?: number
+}> = ({
+  sunDirection,
+  earthDirection,
+  observerHeightM,
+  visualScale,
+  heightmap,
+  visualExaggeration = 1.0,
+}) => {
   const distance = DEFAULT_VISUAL_DISTANCE * visualScale
+
+  // Compute terrain mesh geometry if heightmap is supplied
+  const { terrainGeometry, wireframeGeometry, observerSceneY } = useMemo(() => {
+    if (!heightmap) {
+      return { terrainGeometry: null, wireframeGeometry: null, observerSceneY: 0 }
+    }
+    const maxPhysicalSpan = Math.max(
+      heightmap.width * heightmap.spacing_m,
+      heightmap.height * heightmap.spacing_m,
+    )
+    const scale = maxPhysicalSpan > 0 ? 12.0 / maxPhysicalSpan : 1.0
+    const geo = buildTerrainGeometry(heightmap, { scale, exaggeration: visualExaggeration })
+    const wireGeo = new THREE.WireframeGeometry(geo)
+    const surfElev = getLocalSurfaceElevationAtOrigin(heightmap)
+    const obsY = (surfElev * visualExaggeration + observerHeightM) * scale
+    return { terrainGeometry: geo, wireframeGeometry: wireGeo, observerSceneY: obsY }
+  }, [heightmap, observerHeightM, visualExaggeration])
 
   return (
     <>
@@ -197,8 +227,26 @@ const SceneContent: React.FC<{
       <directionalLight position={[10, 20, 10]} intensity={0.8} />
 
       <LocalAxes length={5} />
-      <GeometricHorizonReference radius={6} />
-      <ObserverMarker heightM={observerHeightM} />
+      {terrainGeometry ? (
+        <group data-testid="terrain-mesh-group">
+          <mesh geometry={terrainGeometry} receiveShadow castShadow>
+            <meshStandardMaterial
+              color="#3a3c46"
+              roughness={0.85}
+              metalness={0.1}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+          {wireframeGeometry && (
+            <lineSegments geometry={wireframeGeometry}>
+              <lineBasicMaterial color="#5a5e70" transparent opacity={0.2} />
+            </lineSegments>
+          )}
+        </group>
+      ) : (
+        <GeometricHorizonReference radius={6} />
+      )}
+      <ObserverMarker heightM={observerHeightM} positionY={observerSceneY} />
 
       {sunDirection && (
         <DirectionMarker
@@ -246,6 +294,10 @@ export const LunarScene: React.FC<LunarSceneProps> = (props) => {
     timestamp,
     visualScale = 1.0,
     demonstrationMode = false,
+    heightmap = null,
+    isTerrainLoading = false,
+    terrainError = null,
+    visualExaggeration = 1.0,
     onError,
   } = props
 
@@ -278,6 +330,7 @@ export const LunarScene: React.FC<LunarSceneProps> = (props) => {
     ? {
         azimuth: observationPoint.sun.azimuth_deg,
         elevation: observationPoint.sun.elevation_deg,
+        horizonElevation: observationPoint.sun.horizon_elevation_deg,
         visible: observationPoint.sun.visible,
       }
     : null
@@ -285,9 +338,12 @@ export const LunarScene: React.FC<LunarSceneProps> = (props) => {
     ? {
         azimuth: observationPoint.earth.azimuth_deg,
         elevation: observationPoint.earth.elevation_deg,
+        horizonElevation: observationPoint.earth.horizon_elevation_deg,
         visible: observationPoint.earth.visible,
       }
     : null
+
+  const isSceneLoading = isLoading || isTerrainLoading
 
   return (
     <div
@@ -353,8 +409,9 @@ export const LunarScene: React.FC<LunarSceneProps> = (props) => {
           {sunAngles ? (
             <span data-testid="hud-sun-label" style={{ color: '#ffc53d' }}>
               <strong>Sun:</strong> Az {sunAngles.azimuth.toFixed(1)}° · El{' '}
-              {sunAngles.elevation.toFixed(1)}° (
-              {sunAngles.visible ? 'Visible' : 'Not visible'})
+              {sunAngles.elevation.toFixed(1)}°
+              {sunAngles.horizonElevation !== 0 ? ` (Hrz ${sunAngles.horizonElevation.toFixed(1)}°)` : ''}{' '}
+              ({sunAngles.visible ? 'Visible' : 'Not visible'})
             </span>
           ) : (
             <span style={{ color: '#777' }}>Sun: Awaiting vector</span>
@@ -363,8 +420,9 @@ export const LunarScene: React.FC<LunarSceneProps> = (props) => {
           {earthAngles ? (
             <span data-testid="hud-earth-label" style={{ color: '#4096ff' }}>
               <strong>Earth:</strong> Az {earthAngles.azimuth.toFixed(1)}° · El{' '}
-              {earthAngles.elevation.toFixed(1)}° (
-              {earthAngles.visible ? 'Visible' : 'Not visible'})
+              {earthAngles.elevation.toFixed(1)}°
+              {earthAngles.horizonElevation !== 0 ? ` (Hrz ${earthAngles.horizonElevation.toFixed(1)}°)` : ''}{' '}
+              ({earthAngles.visible ? 'Visible' : 'Not visible'})
             </span>
           ) : (
             <span style={{ color: '#777' }}>Earth: Awaiting vector</span>
@@ -414,11 +472,29 @@ export const LunarScene: React.FC<LunarSceneProps> = (props) => {
                 earthDirection={validEarthScene}
                 observerHeightM={observerHeightM}
                 visualScale={visualScale}
+                heightmap={heightmap}
+                visualExaggeration={visualExaggeration}
               />
             </Canvas>
           </Suspense>
         </SceneErrorBoundary>
       </div>
+
+      {/* Terrain Error Notification Banner */}
+      {terrainError && (
+        <div
+          data-testid="scene-terrain-error-notice"
+          style={{
+            padding: '3px 10px',
+            backgroundColor: 'rgba(250, 173, 20, 0.15)',
+            borderTop: '1px solid #faad14',
+            color: '#faad14',
+            fontSize: '0.65rem',
+          }}
+        >
+          Terrain mesh unavailable ({terrainError}); falling back to geometric horizon plane.
+        </div>
+      )}
 
       {/* Bottom Terrain Reference Notice */}
       <div
@@ -432,16 +508,30 @@ export const LunarScene: React.FC<LunarSceneProps> = (props) => {
           color: '#656575',
           display: 'flex',
           justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '4px',
         }}
       >
-        <span>
-          Geometric Reference Horizon (Elevation 0.0°) · Local ENU scene
-        </span>
-        <span>Terrain occlusion not modeled in Stage 3</span>
+        {heightmap ? (
+          <>
+            <span data-testid="terrain-provenance-notice">
+              Terrain Mesh: {heightmap.dataset_id} · Res: {heightmap.spacing_m}m · Model: {heightmap.model_version}
+              {visualExaggeration !== 1.0 ? ` (Exaggeration: ${visualExaggeration}×)` : ''}
+            </span>
+            <span>Backend visibility authoritative · GPU shadows are visual aids only</span>
+          </>
+        ) : (
+          <>
+            <span>
+              Geometric Reference Horizon (Elevation 0.0°) · Local ENU scene
+            </span>
+            <span>Terrain occlusion not modeled</span>
+          </>
+        )}
       </div>
 
       {/* Loading Overlay */}
-      {isLoading && (
+      {isSceneLoading && (
         <div
           data-testid="scene-loading-overlay"
           style={{
@@ -459,7 +549,7 @@ export const LunarScene: React.FC<LunarSceneProps> = (props) => {
             fontSize: '0.9rem',
           }}
         >
-          Loading lunar scene ephemeris…
+          {isTerrainLoading ? 'Loading terrain heightmap…' : 'Loading lunar scene ephemeris…'}
         </div>
       )}
     </div>

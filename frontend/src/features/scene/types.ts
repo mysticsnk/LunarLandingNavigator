@@ -3,9 +3,10 @@
  */
 
 import type { EnuVector } from '../../lib/coordinates'
-import type { NowResult, ResolvedSite, Site } from '../../api/types'
+import type { Heightmap, NowResult, ResolvedSite, Site } from '../../api/types'
 
 export type ObservationPoint = NowResult['point']
+export type { Heightmap }
 
 export interface LunarSceneProps {
   className?: string
@@ -46,9 +47,23 @@ export interface LunarSceneProps {
    */
   timestamp?: string | null
   /**
-   * Reserved for a future physical terrain elevation heightmap.
+   * Numerical terrain heightmap for local elevation mesh in Stage 4.
    */
-  heightmap?: unknown | null
+  heightmap?: Heightmap | null
+  /**
+   * Whether numerical terrain heightmap is loading.
+   */
+  isTerrainLoading?: boolean
+  /**
+   * Human-readable error if terrain heightmap failed to load.
+   */
+  terrainError?: string | null
+  /**
+   * Visual vertical exaggeration for local terrain mesh.
+   * Defaults strictly to 1.0 (physical 1:1 scale).
+   * Visual exaggeration never alters backend visibility flags.
+   */
+  visualExaggeration?: number
   /**
    * Multiplier used strictly for rendering distance/marker visibility.
    * Kept strictly separated from physical coordinates.
