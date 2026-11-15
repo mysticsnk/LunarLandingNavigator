@@ -413,8 +413,14 @@ describe('LunarScene component and coordinate orientation', () => {
       )
     })
 
-    it('displays explicit unavailable notice when no numerical terrain DEM exists', () => {
-      render(<LunarScene heightmap={null} />)
+    it('displays explicit terrain-unavailable notice when no heightmap is loaded (Task 5)', () => {
+      render(
+        <LunarScene
+          observationPoint={null}
+          heightmap={null}
+        />,
+      )
+
       expect(screen.getByTestId('terrain-unavailable-notice')).toBeInTheDocument()
       expect(
         screen.getByText(/No numerical terrain DEM loaded for this site/i),

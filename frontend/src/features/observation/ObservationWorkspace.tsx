@@ -786,6 +786,45 @@ export function ObservationWorkspace() {
                   {layoutMode === 'enlarge-local' ? 'Restore Split' : 'Enlarge Scene'}
                 </button>
               </div>
+
+              {/* Site Inspector Summary Panel matching Image 2 */}
+              <div className="site-inspector-grid" data-testid="site-inspector-panel">
+                <span className="site-inspector-label">
+                  <span aria-hidden="true">📍</span> Site
+                </span>
+                <span className="site-inspector-value">
+                  {effectiveSite ? `${effectiveSite.name} (active)` : (coordinate ? `${coordinate.latitude.toFixed(2)}°, ${coordinate.longitude.toFixed(2)}°` : '—')}
+                </span>
+
+                <span className="site-inspector-label">
+                  <span aria-hidden="true">☀️</span> Sun elevation
+                </span>
+                <span className="site-inspector-value">
+                  {selectedPoint ? `${selectedPoint.sun.elevation_deg.toFixed(1)}°` : '—'}
+                </span>
+
+                <span className="site-inspector-label">
+                  <span aria-hidden="true">🌐</span> Earth visibility
+                </span>
+                <span className="site-inspector-value" style={{ color: selectedPoint?.earth.visible ? '#00f0ff' : selectedPoint ? '#9da0a8' : undefined }}>
+                  {selectedPoint ? (selectedPoint.earth.visible ? 'Visible' : 'Blocked') : '—'}
+                </span>
+
+                <span className="site-inspector-label">
+                  <span aria-hidden="true">⛰️</span> Horizon mode
+                </span>
+                <span className="site-inspector-value">
+                  {((workflow === 'comparison' ? comparisonResult?.meta.horizon_mode : workflow === 'timeline' ? timelineResult?.meta.horizon_mode : result?.meta.horizon_mode) ?? draft.horizonMode) === 'terrain' ? 'Terrain' : 'Geometric'}
+                </span>
+
+                <span className="site-inspector-label">
+                  <span aria-hidden="true">⏱️</span> Source freshness
+                </span>
+                <span className="site-inspector-value">
+                  {(workflow === 'timeline' ? timelineResult?.meta.data_status : result?.meta.data_status) ?? '—'}
+                </span>
+              </div>
+
               <p className="muted">
                 Schematic local ENU scene · directions from the observation API.
               </p>

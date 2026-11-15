@@ -90,15 +90,54 @@ function createProceduralMoonTexture(): THREE.CanvasTexture {
       }
     }
 
-    // Grid lines: Equator and Prime Meridian (subtle navigation aid)
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)'
+    // Coordinate grid lines: Parallels (N 60°, N 30°, Equator 0°, S 30°, S 60°)
+    ctx.strokeStyle = 'rgba(120, 180, 240, 0.22)'
     ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.moveTo(0, 256)
-    ctx.lineTo(1024, 256) // Equator (0° lat)
-    ctx.moveTo(512, 0)
-    ctx.lineTo(512, 512) // Prime Meridian (0° lon)
-    ctx.stroke()
+    const parallels = [
+      { lat: 60, y: 85, label: 'N 60°' },
+      { lat: 30, y: 171, label: 'N 30°' },
+      { lat: 0, y: 256, label: '0°' },
+      { lat: -30, y: 341, label: 'S 30°' },
+      { lat: -60, y: 427, label: 'S 60°' },
+    ]
+    for (const p of parallels) {
+      ctx.beginPath()
+      ctx.moveTo(0, p.y)
+      ctx.lineTo(1024, p.y)
+      ctx.stroke()
+    }
+
+    // Coordinate grid lines: Meridians (120° W, 60° W, Prime Meridian 0°, 60° E, 120° E)
+    const meridians = [
+      { lon: -120, x: 171, label: '120° W' },
+      { lon: -60, x: 341, label: '60° W' },
+      { lon: 0, x: 512, label: '0°' },
+      { lon: 60, x: 683, label: '60° E' },
+      { lon: 120, x: 853, label: '120° E' },
+    ]
+    for (const m of meridians) {
+      ctx.beginPath()
+      ctx.moveTo(m.x, 0)
+      ctx.lineTo(m.x, 512)
+      ctx.stroke()
+    }
+
+    // Coordinate text labels
+    ctx.font = '11px sans-serif'
+    ctx.fillStyle = 'rgba(180, 220, 255, 0.55)'
+    ctx.textAlign = 'center'
+    ctx.fillText('N 90°', 512, 16)
+    ctx.fillText('S 90°', 512, 502)
+    for (const p of parallels) {
+      ctx.textAlign = 'left'
+      ctx.fillText(p.label, 516, p.y - 4)
+    }
+    for (const m of meridians) {
+      if (m.lon !== 0) {
+        ctx.textAlign = 'center'
+        ctx.fillText(m.label, m.x, 272)
+      }
+    }
   }
 
   const texture = new THREE.CanvasTexture(canvas)
@@ -781,7 +820,7 @@ export const GlobalMoonScene: React.FC<GlobalMoonSceneProps> = ({
         )}
       </div>
 
-      {/* Provenance and Legend Footer */}
+      {/* Provenance and Navigation Footer matching Image 2 */}
       <div
         className="global-moon-footer"
         data-testid="global-moon-footer"
@@ -798,9 +837,11 @@ export const GlobalMoonScene: React.FC<GlobalMoonSceneProps> = ({
         }}
       >
         <span>
-          MCMF global frame · Sphere radius 1,737.4 km reference · Drag to orbit, scroll to zoom
+          CLICK: PIN | DRAG: ROTATE | SCROLL: ZOOM | DOUBLE-CLICK: RECENTER
         </span>
-        <span>Backend Earth visibility authoritative · Link line is a visual aid</span>
+        <span>
+          MCMF global frame · Sphere radius 1,737.4 km reference · Backend Earth visibility authoritative · Link line is a visual aid
+        </span>
       </div>
 
       {/* Loading Overlay */}

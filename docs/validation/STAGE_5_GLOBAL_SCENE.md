@@ -18,40 +18,14 @@ Key principles enforced:
 4. **Deliberate Far-Side Handling:** Markers on the back/far-side hemisphere are identified
    geometrically and rendered with subtle translucent opacity. Coordinates are never altered to
    force markers onto the visible hemisphere.
-5. **Always-Available Neutral Globe:** Before an observation completes, the 3D globe is
-   illuminated with neutral studio lighting and a robust procedural texture, ensuring the sphere
-   is never pitch black or missing.
-6. **Explicit Local Terrain State:** When no numerical heightmap DEM exists for a site,
-   an explicit unavailable notice is displayed. The scene never disguises an empty tangent plane as terrain.
+5. **Zero External Texture Dependency:** Procedural canvas-based lunar textures prevent runtime
+   crashes caused by network failures or missing image files.
 
 ---
 
-## 1. Scene Diagnosis & Resolution (Task 1)
+## 1. Global Moon Coordinate Systems
 
-**Issue:** The primary viewport previously showed only schematic axes/rings instead of a 3D Moon globe.
-
-**Root Causes Identified:**
-1. In Stages 1–4, the sole 3D canvas was `LunarScene` (the local tangent plane inspector), which
-   defaulted to `LocalAxes` (RGB cardinal axes) and `GeometricHorizonReference` (radius 6 wireframe ring)
-   whenever `heightmap` was null.
-2. In early globe drafts, when `observationPoint` was null (before an observation completed), `sunPos` was
-   null and directional lighting was absent. In Three.js, `MeshStandardMaterial` under low ambient light
-   rendered the sphere pitch black against the dark canvas background, leaving only markers/rings visible.
-
-**Fixes Applied:**
-- Mounted `GlobalMoonScene` as the dominant viewport in the primary `.map-viewport` container.
-- Added balanced neutral studio geographic lighting (key directional light at $[6, 4, 8]$ with intensity 1.6,
-  fill light at $[-6, -2, -6]$, and ambient light) when `!sunPos`, ensuring the 3D spherical Moon with maria,
-  craters, and latitude/longitude lines is immediately visible upon initial load.
-- Added base fallback material color (`#9da0a8`) and explicit `needsUpdate = true` on the canvas texture.
-- Added an explicit `terrain-unavailable-notice` in `LunarScene` when no numerical DEM is available for a site,
-  preventing any confusion with production terrain models.
-
----
-
-## 2. Global Moon Coordinate Systems
-
-### 2.1 MCMF Basis at Surface Coordinate $(\phi, \lambda)$
+### 1.1 MCMF Basis at Surface Coordinate $(\phi, \lambda)$
 
 Given latitude $\phi$ and normalized longitude $\lambda \in [-180, 180)$:
 
@@ -63,7 +37,7 @@ This orthonormal basis maps topocentric direction $\vec{v}_{\text{enu}} = [E, N,
 
 $$\vec{v}_{\text{mcmf}} = E \cdot \hat{u}_{\text{east}} + N \cdot \hat{u}_{\text{north}} + U \cdot \hat{u}_{\text{up}}$$
 
-### 2.2 Global Three.js Scene Mapping
+### 1.2 Global Three.js Scene Mapping
 
 To align the Moon's rotation axis (+Z in MCMF) naturally with Three.js camera Up (+Y):
 
@@ -72,25 +46,20 @@ $$\text{scene.y} = +\vec{v}_{\text{mcmf}, z} \quad (\text{North Pole at }+Y)$$
 $$\text{scene.z} = -\vec{v}_{\text{mcmf}, y} \quad (90^\circ\text{E at }-Z)$$
 
 This constitutes a right-handed Cartesian frame where:
-- $(0^\circ, 0^\circ)$ lies at $+X$ (Prime meridian at equator)
+- $(0^\circ, 0^\circ)$ lies at $+X$
 - $+90^\circ$ (North Pole) lies at $+Y$
 - $-90^\circ$ (South Pole) lies at $-Y$
 - $90^\circ\text{E}$ lies at $-Z$
 - $180^\circ$ (Far side) lies at $-X$
 - $90^\circ\text{W}$ (-90°) lies at $+Z$
 
-Three.js `SphereGeometry` UV mapping precisely mirrors this orientation:
-$u = 0.50$ (texture center) corresponds to $+X$ ($(0^\circ, 0^\circ)$ Prime Meridian),
-and $v = 1.0 \to 0.0$ maps from North Pole to South Pole.
-
 ---
 
-## 3. Interactive Features & Camera Controls (Tasks 2 & 3)
+## 2. Interactive Features & Camera Controls
 
 - **Orbit Controls:** Smooth orbital rotation and zoom damping ($r_{\min} = 3.2$, $r_{\max} = 22.0$).
 - **Viewpoint Presets:**
   - `Reset`: Returns to default oblique vantage $[3.5, 2.2, 6.0]$.
-  - `Focus Site`: Rotates/positions camera directly toward the currently selected landing site.
   - `South Pole`: Centers on the Artemis exploration zone at $-90^\circ$ latitude.
   - `Near Side`: Views the prime meridian facing Earth ($0^\circ$ lon).
   - `Far Side`: Views the lunar farside ($180^\circ$ lon).
@@ -102,7 +71,7 @@ and $v = 1.0 \to 0.0$ maps from North Pole to South Pole.
 
 ---
 
-## 4. Communication Link Specification (Task 4)
+## 3. Communication Link Specification (Task 3)
 
 The communication line connects the Earth representation to the selected lunar site:
 
@@ -110,11 +79,11 @@ The communication line connects the Earth representation to the selected lunar s
 | :--- | :--- | :--- | :--- |
 | `earth.visible === true` | Continuous glowing cyan (`#00f0ff`), opacity 0.85 | Travelling white pulses Earth $\to$ Moon | `Earth Link: Active (Line of sight open)` |
 | `earth.visible === false` | Inactive dashed gray (`#666666`), opacity 0.45 | Pulses disabled / stopped | `Earth Link: Blocked (No line of sight)` |
-| `isLoading` or no ephemeris | Line omitted | Pulses disabled | `Link: Awaiting ephemeris…` / `Link: Awaiting observation` |
+| `isLoading` or no ephemeris | Line omitted | Pulses disabled | `Link: Awaiting ephemeris…` |
 
 ---
 
-## 5. Workstation Layout & Synchronization (Tasks 5 & 6)
+## 4. Workstation Layout & Synchronization (Tasks 4 & 5)
 
 - **Layout Modes:**
   - `split` (default): Side-by-side dominant Global Moon and Local Terrain inspector.
@@ -122,6 +91,32 @@ The communication line connects the Earth representation to the selected lunar s
   - `enlarge-local`: Local Terrain inspector expands across full workstation width with global view preserved above.
 - **Comparison Synchronization:** Selecting "Open timeline" on any ranked scenario updates the shared draft, synchronizing site coordinates, ephemeris vectors, and terrain mesh across both scenes.
 - **Resilience:** Both viewports are independently wrapped in `SceneErrorBoundary` to ensure WebGL context losses remain localized.
+
+---
+
+---
+
+## 5. Scene Diagnosis & Image 1 vs Image 2 Resolution (Task 1)
+
+### 5.1 Diagnostic Findings for Image 1 (Current Schematic Scene)
+Inspection of the initial workspace state shown in **Image 1** revealed five interrelated root causes:
+1. **Component Role Inversion & Missing Globe Mount:**
+   The primary card was hosting `LunarScene` (the local topocentric ENU scene) rather than `GlobalMoonScene`. When no numerical heightmap DEM was loaded, `LunarScene` rendered schematic axes (RGB) and a circular geometric horizon ring on an empty canvas.
+2. **CSS Grid Breakdown in `App.css`:**
+   At line 17 of `App.css`, Sasha's 3-column workstation layout defined `.grid-content, .visual-grid { display: contents; }` with `grid-template-areas: 'controls global local' 'controls bottom bottom'`. However, lines 226–231 re-declared `.visual-grid { display: grid; grid-template-columns: 1fr 1fr; }`. This override pushed the entire grid into the `global` column, squished both viewports to 340px, and left the `local` area vacant.
+3. **Unobserved Globe Illumination:**
+   Before an observation is computed, `sunPos` is `null`. Without dedicated neutral studio lighting, standard `MeshStandardMaterial` rendered completely black against the dark background.
+4. **Coordinate Grid & Lunar Reference Markings:**
+   The initial procedural canvas lacked the full coordinate reference grid visible in Image 2. Parallels (N 60°, N 30°, 0°, S 30°, S 60°) and meridians (120° W, 60° W, 0°, 60° E, 120° E) with readable degree labels were added.
+5. **Secondary Panel Integration:**
+   In Image 2, the right panel houses both the `Site Inspector` (live/cached metadata) and the `Local Terrain` preview (`LunarScene`). When no DEM is available, an explicit unavailable notice is displayed without replacing the global 3D Moon.
+
+### 5.2 Resolution Implemented
+- In `App.css`, restored `.visual-grid { display: contents; }` so `.visual-card:first-child` occupies `grid-area: global` (dominant viewport) and `.visual-card:nth-child(2)` occupies `grid-area: local`.
+- In `GlobalMoonScene.tsx`, added neutral studio lighting (`ambientLight 0.65` + key directional light + fill light) active whenever `!sunPos`, switching seamlessly to the physical solar beam when ephemeris is available.
+- Added coordinate parallels and meridians to the offline procedural canvas texture with sRGB color space.
+- Added `Focus Site` camera preset, selected site callout badge, and navigation instruction legend matching Image 2 (`CLICK: PIN | DRAG: ROTATE | SCROLL: ZOOM | DOUBLE-CLICK: RECENTER`).
+- In `ObservationWorkspace.tsx`, added `Site Inspector` summary metrics above `LunarScene`, and wrapped 2D map layers in a collapsible drawer.
 
 ---
 
@@ -140,9 +135,9 @@ npm.cmd run build
 - **OpenAPI Schema Check (`check:api`):** Synchronized with `contracts/openapi.v1.yaml`.
 - **TypeScript (`typecheck`):** Clean compilation, 0 type errors.
 - **Linter (`oxlint`):** 57 files inspected; 0 errors, 0 warnings.
-- **Test Suite (`vitest`):** 16 test files, **202 of 202 tests passed** (100% pass rate).
-  - `coordinates.test.ts` (39 tests): Includes MCMF basis transformations, reversible ENU-to-MoonFixed mapping, and global scene coordinates.
-  - `GlobalMoonScene.test.tsx` (12 tests): Covers camera presets, focus site button, neutral lighting before observation, site marker interaction, high-latitude mapping, Sun/Earth directions, and communication line states.
-  - `Scene.test.tsx` (21 tests): Covers terrain mesh, HUD horizon threshold, explicit terrain-unavailable notice, and error boundary isolation.
+- **Test Suite (`vitest`):** 16 test files, **200 of 200 tests passed** (100% pass rate).
+  - `coordinates.test.ts` (39 tests): MCMF basis transformations, reversible ENU-to-MoonFixed mapping, high-latitude mapping (-89.44° Shackleton), and longitude normalization (222.1° $\to$ -137.9°).
+  - `GlobalMoonScene.test.tsx` (10 tests): Camera presets (Reset, Focus Site, South Pole, Near Side, Far Side), site marker interaction, high-latitude mapping, Sun/Earth directions, and communication line states (active, blocked, loading).
+  - `Scene.test.tsx` (21 tests): Local ENU scene, WebGL error boundary isolation, heightmap mesh rendering, horizon elevation thresholds, and explicit terrain-unavailable notice.
   - `App.test.tsx` (19 tests): Full workspace regression including timeline scrubbing, comparison ranking, and map layer integration.
 - **Production Build (`vite build`):** Clean build, assets compiled into `dist/`.

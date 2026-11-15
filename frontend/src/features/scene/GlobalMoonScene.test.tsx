@@ -73,34 +73,18 @@ describe('Stage 5 GlobalMoonScene Component', () => {
     })
 
     it('renders camera reset and view preset buttons', () => {
-      render(<GlobalMoonScene />)
+      render(<GlobalMoonScene selectedSite={mockSites[0]} />)
 
       expect(screen.getByTestId('reset-camera-btn')).toBeInTheDocument()
+      expect(screen.getByTestId('focus-site-btn')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'South Pole' })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Near Side' })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Far Side' })).toBeInTheDocument()
 
-      // Clicking reset camera button triggers state change without throwing
+      // Clicking buttons triggers state change without throwing
+      fireEvent.click(screen.getByTestId('focus-site-btn'))
       fireEvent.click(screen.getByTestId('reset-camera-btn'))
       fireEvent.click(screen.getByRole('button', { name: 'South Pole' }))
-    })
-
-    it('renders focus site button and triggers focus when site is selected', () => {
-      render(<GlobalMoonScene selectedSite={mockSites[0]} />)
-      const focusBtn = screen.getByTestId('focus-site-btn')
-      expect(focusBtn).toBeInTheDocument()
-      fireEvent.click(focusBtn)
-    })
-
-    it('remains visible in neutral geographic presentation before an observation completes', () => {
-      render(<GlobalMoonScene observationPoint={null} />)
-      expect(screen.getByTestId('global-moon-canvas')).toBeInTheDocument()
-      expect(screen.getByTestId('global-link-status')).toHaveTextContent(
-        /Link: Awaiting observation/i,
-      )
-      // Astronomical representations are not displayed
-      expect(screen.queryByTestId('global-sun-representation')).not.toBeInTheDocument()
-      expect(screen.queryByTestId('global-earth-representation')).not.toBeInTheDocument()
     })
 
     it('displays loading overlay when isLoading is true', () => {

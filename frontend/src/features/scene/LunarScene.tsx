@@ -499,7 +499,7 @@ export const LunarScene: React.FC<LunarSceneProps> = (props) => {
         </div>
       )}
 
-      {/* Explicit unavailable state when numerical terrain DEM is not available for site */}
+      {/* Explicit unavailable state when numerical terrain DEM is not available for site (Task 5) */}
       {!heightmap && !isSceneLoading && !terrainError && (
         <div
           data-testid="terrain-unavailable-notice"
