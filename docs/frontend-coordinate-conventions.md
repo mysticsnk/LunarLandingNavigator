@@ -146,11 +146,10 @@ export interface LunarSceneProps {
 
 ---
 
-## 5. Terrain Boundary Notice (Stage 1 vs Stage 2)
+## 5. Terrain Boundary Notice (Stages 1–2)
 
-- **Stage 1 (Current)**:
+- **Stage 1 and Stage 2**:
   - The scene operates strictly with a **geometric horizon reference plane** ($0.0^\circ$ elevation threshold).
   - No physical terrain occlusion or crater-wall ray tracing is claimed or modeled.
   - Bump maps and hillshade textures are never interpreted as numerical terrain geometry.
-- **Stage 2 (Upcoming)**:
-  - High-resolution DEM heightmaps (e.g. PGDA products for Shackleton, Faustini) will attach via the prepared `heightmap` prop and compute numerical line-of-sight obstruction.
+  - Physical terrain occlusion and DEM line-of-sight calculations are outside the Stage 2 scope; terrain requests fail explicitly until a later stage implements them.

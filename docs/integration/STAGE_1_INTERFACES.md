@@ -171,5 +171,5 @@ def execute_now_calculation_job(
 
 ### Remaining Limitations (Scope for Later Stages)
 
-1. **Horizon Occlusion**: Stage 1 uses a geometric horizon threshold of $0.0^\circ$. Real terrain occlusion and DEM ray-tracing belong to Stage 2 (`horizon_mode="terrain"`).
+1. **Horizon Occlusion**: Stage 1 and Stage 2 use a geometric horizon threshold of $0.0^\circ$. Physical terrain occlusion and DEM ray-tracing are outside the Stage 2 scope; terrain requests return `TERRAIN_UNAVAILABLE` until a later stage implements them.
 2. **Timeline Generation**: Multi-step time series (`POST /ephemeris/timeline`) and comparison scoring (`POST /ephemeris/compare`) are scheduled in background job pipelines.

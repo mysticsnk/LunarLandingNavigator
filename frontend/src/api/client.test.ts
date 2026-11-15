@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ApiClient, resolveApiBaseUrl } from './client'
 import { ApiClientError } from './errors'
-import type { Health, ErrorEnvelope } from './types'
+import type { Health, ErrorEnvelope, TimelineRequest } from './types'
+import { comparisonAccepted, comparisonRequest, comparisonResult, timelineAccepted, timelineResult } from '../test/fixtures'
 
 describe('ApiClient Base URL Resolution', () => {
   it('correctly reads override base URL and strips trailing slashes', () => {
@@ -149,5 +150,91 @@ describe('ApiClient Health Request', () => {
     await expect(client.getHealth({ signal: controller.signal })).rejects.toThrow(
       'Request aborted by caller',
     )
+  })
+})
+
+describe('ApiClient timeline workflow', () => {
+  let client: ApiClient
+  const originalFetch = globalThis.fetch
+
+  beforeEach(() => {
+    client = new ApiClient({ baseUrl: 'http://backend.test:8000', defaultTimeoutMs: 1000 })
+  })
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    vi.restoreAllMocks()
+  })
+
+  it('submits the contract request and requires HTTP 202 timeline job envelope', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      json: async () => timelineAccepted,
+      headers: new Headers(),
+    } as unknown as Response)
+    const payload: TimelineRequest = {
+      site: { site_id: 'shackleton-connecting-ridge' },
+      start_time: '2027-07-15T12:00:00Z',
+      duration_days: 14,
+      step_minutes: 120,
+      horizon_mode: 'geometric',
+      observer_height_m: 2,
+      visibility_margin_deg: 0,
+    }
+
+    await expect(client.submitTimeline(payload)).resolves.toEqual(timelineAccepted)
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://backend.test:8000/api/v1/ephemeris/timeline',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify(payload) }),
+    )
+  })
+
+  it('validates a complete timeline result before returning it', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => timelineResult,
+      headers: new Headers(),
+    } as unknown as Response)
+
+    await expect(client.getTimelineResult(timelineAccepted.result_url)).resolves.toEqual(timelineResult)
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      `http://backend.test:8000${timelineAccepted.result_url}`,
+      expect.objectContaining({ method: 'GET' }),
+    )
+  })
+
+  it('rejects an incomplete sample grid instead of displaying a partial result', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ...timelineResult, points: timelineResult.points.slice(0, 3) }),
+      headers: new Headers(),
+    } as unknown as Response)
+
+    await expect(client.getTimelineResult(timelineAccepted.result_url)).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE_FORMAT',
+    })
+  })
+})
+
+describe('ApiClient comparison workflow', () => {
+  let client: ApiClient
+  const originalFetch = globalThis.fetch
+  beforeEach(() => { client = new ApiClient({ baseUrl: 'http://backend.test:8000', defaultTimeoutMs: 1000 }) })
+  afterEach(() => { globalThis.fetch = originalFetch; vi.restoreAllMocks() })
+  it('submits the shared comparison request and requires HTTP 202 comparison job kind', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 202, json: async () => comparisonAccepted, headers: new Headers() } as unknown as Response)
+    await expect(client.submitComparison(comparisonRequest)).resolves.toEqual(comparisonAccepted)
+    expect(globalThis.fetch).toHaveBeenCalledWith('http://backend.test:8000/api/v1/ephemeris/compare', expect.objectContaining({ method: 'POST', body: JSON.stringify(comparisonRequest) }))
+  })
+  it('validates the backend ranked order and comparison metadata without recomputing the score', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => comparisonResult, headers: new Headers() } as unknown as Response)
+    await expect(client.getComparisonResult(comparisonAccepted.result_url)).resolves.toEqual(comparisonResult)
+  })
+  it('rejects malformed comparison ranks and scores', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ ...comparisonResult, ranked_scenarios: [{ ...comparisonResult.ranked_scenarios[0], rank: 2, score: 999 }, comparisonResult.ranked_scenarios[1]] }), headers: new Headers() } as unknown as Response)
+    await expect(client.getComparisonResult(comparisonAccepted.result_url)).rejects.toMatchObject({ code: 'INVALID_RESPONSE_FORMAT' })
   })
 })

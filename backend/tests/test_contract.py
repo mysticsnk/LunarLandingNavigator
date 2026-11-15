@@ -12,6 +12,7 @@ from sqlalchemy.exc import OperationalError
 
 from app.core.database import check_database
 from app.main import create_app
+from app.results import ComparisonResult
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "contracts" / "openapi.v1.yaml"
@@ -117,8 +118,16 @@ def test_all_agreed_routes_are_documented_and_runtime_status_is_explicit():
                     "/api/v1/health",
                     "/api/v1/sites",
                     "/api/v1/sites/{site_id}",
+                    "/api/v1/map/layers",
+                    "/api/v1/map/layers/{layer_id}",
+                    "/api/v1/map/layers/{layer_id}/tiles/{matrix}/{row}/{col}",
+                    "/api/v1/map/layers/{layer_id}/image",
                     "/api/v1/resources/csa",
+                    "/api/v1/terrain/coverage",
+                    "/api/v1/terrain/regions/{region_id}/heightmap",
                     "/api/v1/ephemeris/now",
+                    "/api/v1/ephemeris/timeline",
+                    "/api/v1/ephemeris/compare",
                     "/api/v1/jobs/{job_id}",
                     "/api/v1/jobs/{job_id}/result",
                 }
@@ -247,6 +256,7 @@ def test_timeline_fixture_windows_and_duration_weighted_summary_are_consistent()
 
 def test_comparison_fixtures_follow_scoring_order_normalization_and_supported_dates():
     request, result = fixture("comparison-request.json"), fixture("comparison-result.json")
+    ComparisonResult.model_validate(result)
     labels = [scenario["label"] for scenario in request["scenarios"]]
     assert len(labels) == len(set(labels))
     ranked = result["ranked_scenarios"]
@@ -280,3 +290,18 @@ def test_comparison_fixtures_follow_scoring_order_normalization_and_supported_da
             assert summary[metric + "_pct"] == pytest.approx(
                 100 * summary[metric + "_hours"] / (24 * request["duration_days"])
             )
+
+
+def test_comparison_contract_preserves_distinct_terrain_provenance_per_scenario():
+    result = fixture("comparison-result.json")
+    result["meta"]["horizon_mode"] = "terrain"
+    result["meta"]["terrain_dataset_id"] = None
+    for index, item in enumerate(result["ranked_scenarios"], start=1):
+        item["provenance"]["model_version"] = f"terrain-model-{index}"
+        item["provenance"]["terrain_dataset_id"] = f"dataset-{index}"
+
+    validator({"$ref": "#/components/schemas/ComparisonResult"}).validate(result)
+    ComparisonResult.model_validate(result)
+    result["meta"]["terrain_dataset_id"] = "dataset-1"
+    with pytest.raises(ValueError):
+        ComparisonResult.model_validate(result)

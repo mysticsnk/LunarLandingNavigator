@@ -7,9 +7,9 @@ from fastapi.exceptions import RequestValidationError
 from starlette.concurrency import run_in_threadpool
 
 from app.core.problems import ErrorEnvelope
-from app.requests import Category, NowRequest
+from app.requests import Category, ComparisonRequest, NowRequest, TimelineRequest
 from app.resources import get_resources
-from app.results import NowResult
+from app.results import ComparisonResult, Heightmap, NowResult, TerrainCoverage, TimelineResult
 from app.storage import Repository, get_repository
 
 
@@ -46,6 +46,8 @@ router = APIRouter(
     },
 )
 Repo = Annotated[Repository, Depends(get_repository)]
+TerrainLatitude = Annotated[float, Query(ge=-90, le=90, allow_inf_nan=False)]
+TerrainLongitude = Annotated[float, Query(ge=-180, lt=360, allow_inf_nan=False)]
 
 
 @router.get("/sites", dependencies=[Depends(query_fields("category", "limit", "offset"))])
@@ -61,6 +63,24 @@ def list_sites(
 @router.get("/sites/{site_id}", dependencies=[Depends(query_fields())])
 def get_site(site_id: str, repository: Repo):
     return repository.site(site_id)
+
+
+@router.get(
+    "/terrain/coverage",
+    response_model=TerrainCoverage,
+    dependencies=[Depends(query_fields("latitude", "longitude"))],
+)
+def terrain_coverage(latitude: TerrainLatitude, longitude: TerrainLongitude, repository: Repo):
+    return repository.terrain_coverage(latitude, longitude)
+
+
+@router.get(
+    "/terrain/regions/{region_id}/heightmap",
+    response_model=Heightmap,
+    dependencies=[Depends(query_fields())],
+)
+def terrain_heightmap(region_id: str, repository: Repo):
+    return repository.heightmap(region_id)
 
 
 def get_csa_fetcher():
@@ -88,13 +108,35 @@ async def submit_now(payload: NowRequest, request: Request, repository: Repo):
     )
 
 
+@router.post("/ephemeris/timeline", status_code=202, dependencies=[Depends(query_fields())])
+async def submit_timeline(payload: TimelineRequest, request: Request, repository: Repo):
+    return await run_in_threadpool(
+        repository.submit,
+        payload,
+        request.state.request_id,
+        submitted=await request.json(),
+    )
+
+
+@router.post("/ephemeris/compare", status_code=202, dependencies=[Depends(query_fields())])
+async def submit_comparison(payload: ComparisonRequest, request: Request, repository: Repo):
+    return await run_in_threadpool(
+        repository.submit,
+        payload,
+        request.state.request_id,
+        submitted=await request.json(),
+    )
+
+
 @router.get("/jobs/{job_id}", dependencies=[Depends(query_fields())])
 def job_status(job_id: UUID, repository: Repo):
     return repository.status(str(job_id))
 
 
 @router.get(
-    "/jobs/{job_id}/result", response_model=NowResult, dependencies=[Depends(query_fields())]
+    "/jobs/{job_id}/result",
+    response_model=NowResult | TimelineResult | ComparisonResult,
+    dependencies=[Depends(query_fields())],
 )
 def job_result(job_id: UUID, repository: Repo):
     return repository.result(str(job_id))

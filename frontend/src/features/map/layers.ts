@@ -34,7 +34,8 @@ export const VERIFIED_MAP_LAYERS: Layer[] = [
     service_type: 'wms',
     crs_id: 'IAU2000:30100',
     coordinate_units: 'degrees',
-    extent: [-180, -90, 180, 90],
+    // Footprint envelope: Speyerer and Robinson (2013) 100m product covers 90°S to 45°S.
+    extent: [-180, -90, 180, -45],
     attribution: 'NASA/GSFC/ASU LROC Team; cite Speyerer and Robinson (2013).',
     source_url: 'https://wms.im-ldi.com/?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.1.1',
     tile_matrix_set: null,

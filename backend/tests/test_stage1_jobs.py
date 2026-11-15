@@ -264,7 +264,7 @@ def test_cache_expiration_requires_execution(stage_repo, stage_clock):
     assert len(calls) == 1
 
 
-def test_map_router_registration_and_stage2_exclusion():
+def test_map_router_registration_and_stage3_calculation_routes():
     router = APIRouter(prefix="/api/v1/map")
 
     @router.get("/layers")
@@ -273,8 +273,8 @@ def test_map_router_registration_and_stage2_exclusion():
 
     with TestClient(create_app(map_router=router)) as client:
         assert client.get("/api/v1/map/layers").json() == {"items": []}
-        for path in ("timeline", "compare"):
-            assert client.post("/api/v1/ephemeris/" + path, json={}).status_code == 404
+        assert client.post("/api/v1/ephemeris/timeline", json={}).status_code == 400
+        assert client.post("/api/v1/ephemeris/compare", json={}).status_code == 400
 
 
 def test_explicit_defaults_share_a_cache_key(stage_repo):
@@ -312,7 +312,7 @@ def test_adapter_calls_only_the_agreed_astronomy_service(monkeypatch, stage_repo
         calls.append(kwargs)
         return point
 
-    monkeypatch.setattr(worker, "calculate_geometric_observation", calculate)
+    monkeypatch.setattr(worker, "calculate_observation", calculate)
     output = worker.execute_observation(normalized)
     assert calls[0]["observer_height_m"] == normalized["site"]["observer_height_m"]
     assert calls[0]["longitude"] == -137.9

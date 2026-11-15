@@ -1,7 +1,12 @@
 import hashlib
 import json
+import math
+import re
+import struct
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -10,6 +15,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     Float,
+    ForeignKey,
     Index,
     Integer,
     MetaData,
@@ -28,9 +34,18 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from app.astronomy import normalize_longitude
 from app.core.database import get_engine
 from app.core.problems import APIProblem
-from app.requests import CatalogSite, NowRequest, canonical_time
+from app.requests import (
+    CatalogSite,
+    ComparisonRequest,
+    NowRequest,
+    TimelineRequest,
+    canonical_time,
+)
 
 MODEL_VERSION = "geometric-now-v1"
+TIMELINE_MODEL_VERSION = "geometric-timeline-v1"
+COMPARISON_MODEL_VERSION = "comparison-v1"
+TERRAIN_PROCESSING_VERSION = "lunar-south-polar-v1"
 metadata = MetaData()
 json_type = JSON().with_variant(JSONB(), "postgresql")
 sites = Table(
@@ -68,7 +83,7 @@ jobs = Table(
     Column("lease_expires_at", DateTime(timezone=True)),
     Column("attempts", Integer, nullable=False),
     Column("result_expires_at", DateTime(timezone=True)),
-    CheckConstraint("kind = 'now'"),
+    CheckConstraint("kind IN ('now','timeline','comparison')", name="ck_observation_jobs_kind"),
     CheckConstraint("status IN ('queued','running','succeeded','failed')"),
 )
 Index("ix_jobs_queue", jobs.c.status, jobs.c.created_at)
@@ -89,6 +104,38 @@ resource_cache = Table(
     Column("payload", json_type, nullable=False),
     Column("fetched_at", DateTime(timezone=True), nullable=False),
 )
+terrain_datasets = Table(
+    "terrain_datasets",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("product_version", String),
+    Column("source_url", String, nullable=False),
+    Column("sha256", String(64), nullable=False),
+    Column("asset_path", String, nullable=False),
+    Column("processing_version", String, nullable=False),
+    Column("resolution_m", Float, nullable=False),
+    Column("retrieved_at", DateTime(timezone=True), nullable=False),
+    Column("attribution", String, nullable=False),
+    Column("ready", Integer, nullable=False),
+    CheckConstraint("length(sha256) = 64"),
+    CheckConstraint("resolution_m > 0"),
+    CheckConstraint("ready IN (0,1)"),
+)
+terrain_regions = Table(
+    "terrain_regions",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("dataset_id", String, ForeignKey("terrain_datasets.id")),
+    Column("origin_latitude", Float, nullable=False),
+    Column("origin_longitude", Float, nullable=False),
+    Column("spacing_m", Float, nullable=False),
+    Column("grid_half_extent_m", Float, nullable=False),
+    CheckConstraint("origin_latitude >= -90 AND origin_latitude <= 90"),
+    CheckConstraint("origin_longitude >= -180 AND origin_longitude < 180"),
+    CheckConstraint("spacing_m > 0"),
+    CheckConstraint("grid_half_extent_m > 0"),
+)
+Index("ix_terrain_regions_dataset", terrain_regions.c.dataset_id)
 
 
 def utcnow():
@@ -104,16 +151,31 @@ def iso(value):
 
 
 def request_key(normalized):
+    kind = normalized.get("kind", "now")
+    if kind == "comparison":
+        return hashlib.sha256(
+            json.dumps(normalized, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+    request_fields = (
+        ("start_time", "duration_days", "step_minutes") if kind == "timeline" else ("target_time",)
+    )
     scientific = {
-        key: normalized[key]
-        for key in (
-            "target_time",
-            "observer_height_m",
-            "visibility_margin_deg",
-            "horizon_mode",
-            "model_version",
-        )
+        **{
+            key: normalized[key]
+            for key in (
+                *request_fields,
+                "observer_height_m",
+                "visibility_margin_deg",
+                "horizon_mode",
+                "model_version",
+                "terrain_dataset_id",
+                "processing_version",
+            )
+            if key in normalized
+        },
     }
+    if kind != "now":
+        scientific["kind"] = kind
     scientific.update(
         {key: normalized["site"][key] for key in ("latitude", "longitude", "surface_elevation_m")}
     )
@@ -152,29 +214,66 @@ class Repository:
             "offset": offset,
         }
 
-    def resolve(self, request: NowRequest, submitted=None):
-        if request.horizon_mode != "geometric":
-            raise APIProblem(
-                422,
-                "TERRAIN_UNAVAILABLE",
-                "Terrain mode is unavailable in Stage 1",
-                [
-                    {"field": "horizon_mode", "reason": "no_data"},
-                ],
-            )
+    def resolve(self, request: NowRequest | TimelineRequest | ComparisonRequest, submitted=None):
+        if isinstance(request, ComparisonRequest):
+            return self.resolve_comparison(request)
         if isinstance(request.site, CatalogSite):
             record = self.site(request.site.site_id)
+            preferred_region = record["terrain_region_id"]
             site = {
                 "site_id": record["id"],
                 **{k: record[k] for k in ("name", "latitude", "longitude")},
             }
         else:
+            preferred_region = None
             site = {"site_id": None, **request.site.model_dump()}
         site["latitude"] = float(site["latitude"])
         site["longitude"] = normalize_longitude(float(site["longitude"]))
-        # Geometric height is relative to Horizons' reference surface, not a measured DEM.
-        site.update(surface_elevation_m=0.0, observer_height_m=request.observer_height_m)
+        terrain_dataset = None
+        terrain_region_id = None
+        if request.horizon_mode == "terrain":
+            terrain_dataset, reason = self.terrain_dataset_for(
+                site["latitude"], site["longitude"], preferred_region
+            )
+            if terrain_dataset is None:
+                raise APIProblem(
+                    422,
+                    "TERRAIN_UNAVAILABLE",
+                    "Terrain data is unavailable for the requested location.",
+                    [{"field": "site", "reason": reason}],
+                )
+            site["surface_elevation_m"] = terrain_dataset["surface_elevation_m"]
+            terrain_region_id = terrain_dataset["region_id"]
+        else:
+            site["surface_elevation_m"] = 0.0
+        site["observer_height_m"] = request.observer_height_m
+        if isinstance(request, TimelineRequest):
+            start_time = canonical_time(iso(request.start_time))
+            return {
+                "kind": "timeline",
+                "site": site,
+                "start_time": start_time,
+                "end_time": iso(request.start_time + timedelta(days=request.duration_days)),
+                "duration_days": request.duration_days,
+                "step_minutes": request.step_minutes,
+                "observer_height_m": request.observer_height_m,
+                "visibility_margin_deg": request.visibility_margin_deg,
+                "horizon_mode": request.horizon_mode,
+                "model_version": TIMELINE_MODEL_VERSION
+                if terrain_dataset is None
+                else terrain_dataset["processing_version"],
+                **(
+                    {}
+                    if terrain_dataset is None
+                    else {
+                        "terrain_dataset_id": terrain_dataset["id"],
+                        "processing_version": terrain_dataset["processing_version"],
+                        "terrain_region_id": terrain_region_id,
+                    }
+                ),
+            }
         return {
+            "kind": "now",
             "site": site,
             "target_time": canonical_time(
                 submitted["target_time"] if submitted else iso(request.target_time)
@@ -182,17 +281,311 @@ class Repository:
             "observer_height_m": request.observer_height_m,
             "visibility_margin_deg": request.visibility_margin_deg,
             "horizon_mode": request.horizon_mode,
-            "model_version": MODEL_VERSION,
+            "model_version": MODEL_VERSION
+            if terrain_dataset is None
+            else terrain_dataset["processing_version"],
+            **(
+                {}
+                if terrain_dataset is None
+                else {
+                    "terrain_dataset_id": terrain_dataset["id"],
+                    "processing_version": terrain_dataset["processing_version"],
+                    "terrain_region_id": terrain_region_id,
+                }
+            ),
         }
+
+    def resolve_comparison(self, request: ComparisonRequest):
+        scenarios = []
+        for index, scenario in enumerate(request.scenarios):
+            timeline_request = TimelineRequest(
+                site=scenario.site,
+                start_time=iso(scenario.start_time),
+                duration_days=request.duration_days,
+                step_minutes=request.step_minutes,
+                horizon_mode=request.horizon_mode,
+                observer_height_m=request.observer_height_m,
+                visibility_margin_deg=request.visibility_margin_deg,
+            )
+            try:
+                normalized = self.resolve(timeline_request)
+            except APIProblem as exc:
+                if exc.code == "TERRAIN_UNAVAILABLE":
+                    raise APIProblem(
+                        exc.status,
+                        exc.code,
+                        exc.message,
+                        [
+                            {
+                                **detail,
+                                "field": f"scenarios.{index}.site",
+                            }
+                            for detail in exc.details
+                        ],
+                    ) from exc
+                raise
+            normalized["label"] = scenario.label
+            scenarios.append(normalized)
+        dataset_ids = {scenario.get("terrain_dataset_id") for scenario in scenarios}
+        return {
+            "kind": "comparison",
+            "scenarios": scenarios,
+            "duration_days": request.duration_days,
+            "step_minutes": request.step_minutes,
+            "horizon_mode": request.horizon_mode,
+            "observer_height_m": request.observer_height_m,
+            "visibility_margin_deg": request.visibility_margin_deg,
+            "ranking_version": "v1",
+            "model_version": COMPARISON_MODEL_VERSION,
+            "terrain_dataset_id": next(iter(dataset_ids)) if len(dataset_ids) == 1 else None,
+        }
+
+    def terrain_dataset(self, dataset_id):
+        with self.engine.connect() as conn:
+            row = (
+                conn.execute(
+                    select(terrain_datasets).where(
+                        terrain_datasets.c.id == dataset_id,
+                        terrain_datasets.c.ready == 1,
+                    )
+                )
+                .mappings()
+                .first()
+            )
+        return dict(row) if row else None
+
+    def register_terrain_dataset(self, manifest):
+        from tools.prepare_terrain import PRODUCTS, verify_raster
+
+        asset_path = Path(manifest["path"]).resolve(strict=True)
+        repository_root = Path(__file__).resolve().parents[2]
+        if asset_path.is_relative_to(repository_root):
+            raise ValueError("prepared terrain assets must be stored outside the repository")
+        if manifest.get("preparation_status") != "terrain_ready":
+            raise ValueError("terrain source has not passed raster readiness checks")
+        product = PRODUCTS.get(manifest.get("product_id"))
+        if product is None or product.product_id != "LDEM_80S_20MPP_ADJ.TIF":
+            raise ValueError("only the verified Product 90 regional raster is registerable")
+        verified = verify_raster(product, asset_path, manifest.get("sha256"))
+        if manifest.get("preparation_status") != verified["preparation_status"]:
+            raise ValueError("terrain source manifest does not match the verified raster")
+        sha256 = verified["sha256"]
+        dataset_id = f"lola-product-90-{sha256[:16]}"
+        with self.engine.begin() as conn:
+            if conn.scalar(
+                select(terrain_datasets.c.id).where(terrain_datasets.c.id == dataset_id)
+            ):
+                return dataset_id
+            site_rows = (
+                conn.execute(select(sites).where(sites.c.terrain_region_id.is_not(None)))
+                .mappings()
+                .all()
+            )
+            if not site_rows:
+                raise ValueError("apply the Stage 4 migration before registering terrain")
+            conn.execute(
+                insert(terrain_datasets).values(
+                    id=dataset_id,
+                    product_version=manifest.get("version"),
+                    source_url=manifest["source_url"],
+                    sha256=sha256,
+                    asset_path=str(asset_path),
+                    processing_version=TERRAIN_PROCESSING_VERSION,
+                    resolution_m=float(manifest["resolution_m"]),
+                    retrieved_at=self.clock(),
+                    attribution="NASA Goddard Space Flight Center LOLA, PGDA Product 90",
+                    ready=1,
+                )
+            )
+            for row in site_rows:
+                values = {
+                    "dataset_id": dataset_id,
+                    "origin_latitude": row["latitude"],
+                    "origin_longitude": row["longitude"],
+                    "spacing_m": float(manifest["resolution_m"]),
+                    "grid_half_extent_m": 1280.0,
+                }
+                updated = conn.execute(
+                    update(terrain_regions)
+                    .where(terrain_regions.c.id == row["terrain_region_id"])
+                    .values(**values)
+                )
+                if not updated.rowcount:
+                    conn.execute(
+                        insert(terrain_regions).values(id=row["terrain_region_id"], **values)
+                    )
+        return dataset_id
+
+    def terrain_dataset_for(self, latitude, longitude, preferred_region_id=None):
+        from app.terrain import TerrainCoverageError, TerrainHorizonService
+        from app.terrain.raster import GeoTiffTerrainSource
+
+        with self.engine.connect() as conn:
+            if preferred_region_id:
+                rows = (
+                    conn.execute(
+                        select(terrain_datasets, terrain_regions.c.id.label("region_id"))
+                        .join(
+                            terrain_regions, terrain_regions.c.dataset_id == terrain_datasets.c.id
+                        )
+                        .where(
+                            terrain_datasets.c.ready == 1,
+                            terrain_regions.c.id == preferred_region_id,
+                        )
+                        .order_by(terrain_datasets.c.id)
+                    )
+                    .mappings()
+                    .all()
+                )
+            else:
+                rows = (
+                    conn.execute(
+                        select(terrain_datasets)
+                        .where(terrain_datasets.c.ready == 1)
+                        .order_by(terrain_datasets.c.id)
+                    )
+                    .mappings()
+                    .all()
+                )
+        if not rows:
+            return None, "no_data"
+        unavailable_reason = "outside_coverage"
+        for row in rows:
+            record = dict(row)
+            try:
+                with GeoTiffTerrainSource(
+                    Path(record["asset_path"]),
+                    dataset_id=record["id"],
+                    model_version=record["processing_version"],
+                    source_url=record["source_url"],
+                    source_frame="MOON_ME / JPL DE421",
+                    reference_radius_m=1_737_400.0,
+                ) as source:
+                    service = TerrainHorizonService(source, latitude=latitude, longitude=longitude)
+                    record["surface_elevation_m"] = service.observer_surface.surface_elevation_m
+                record["region_id"] = (
+                    preferred_region_id
+                    or "custom-"
+                    + urlsafe_b64encode(record["id"].encode()).decode().rstrip("=")
+                    + "-"
+                    + struct.pack("!dd", latitude, normalize_longitude(longitude)).hex()
+                )
+                return record, None
+            except TerrainCoverageError as exc:
+                if exc.reason == "no_data":
+                    unavailable_reason = "no_data"
+                continue
+            except (OSError, ValueError) as exc:
+                raise APIProblem(
+                    503, "TERRAIN_DATA_UNAVAILABLE", "Prepared terrain data could not be read"
+                ) from exc
+        return None, unavailable_reason
+
+    def terrain_coverage(self, latitude, longitude):
+        normalized_latitude = float(latitude)
+        normalized_longitude = normalize_longitude(float(longitude))
+        record, reason = self.terrain_dataset_for(normalized_latitude, normalized_longitude)
+        if record is None:
+            return {
+                "available": False,
+                "latitude": normalized_latitude,
+                "longitude": normalized_longitude,
+                "region_id": None,
+                "dataset_id": None,
+                "resolution_m": None,
+                "source_url": None,
+                "reason": reason,
+            }
+        return {
+            "available": True,
+            "latitude": normalized_latitude,
+            "longitude": normalized_longitude,
+            "region_id": record["region_id"],
+            "dataset_id": record["id"],
+            "resolution_m": record["resolution_m"],
+            "source_url": record["source_url"],
+            "reason": None,
+        }
+
+    def heightmap(self, region_id):
+        from app.terrain.display import build_heightmap
+        from app.terrain.horizon import TerrainCoverageError
+        from app.terrain.raster import GeoTiffTerrainSource
+
+        if region_id.startswith("custom-"):
+            match = re.fullmatch(r"custom-([A-Za-z0-9_-]+)-([0-9a-f]{32})", region_id)
+            if match is None:
+                raise APIProblem(404, "REGION_NOT_FOUND", "Terrain region was not found")
+            encoded_id, coordinate_hex = match.groups()
+            encoded_id += "=" * (-len(encoded_id) % 4)
+            try:
+                dataset_id = urlsafe_b64decode(encoded_id).decode("utf-8")
+                latitude, longitude = struct.unpack("!dd", bytes.fromhex(coordinate_hex))
+            except (ValueError, UnicodeDecodeError, struct.error) as exc:
+                raise APIProblem(404, "REGION_NOT_FOUND", "Terrain region was not found") from exc
+            if (
+                not math.isfinite(latitude)
+                or not math.isfinite(longitude)
+                or not -90 <= latitude <= 90
+                or not -180 <= longitude < 180
+            ):
+                raise APIProblem(404, "REGION_NOT_FOUND", "Terrain region was not found")
+            record = self.terrain_dataset(dataset_id)
+            if record is None:
+                raise APIProblem(404, "REGION_NOT_FOUND", "Terrain region was not found")
+            record.update(
+                region_id=region_id,
+                origin_latitude=latitude,
+                origin_longitude=longitude,
+                spacing_m=record["resolution_m"],
+                grid_half_extent_m=1280.0,
+            )
+        else:
+            with self.engine.connect() as conn:
+                row = (
+                    conn.execute(
+                        select(terrain_datasets, terrain_regions)
+                        .join(
+                            terrain_regions, terrain_regions.c.dataset_id == terrain_datasets.c.id
+                        )
+                        .where(terrain_regions.c.id == region_id, terrain_datasets.c.ready == 1)
+                        .order_by(terrain_datasets.c.id)
+                    )
+                    .mappings()
+                    .first()
+                )
+            if row is None:
+                raise APIProblem(404, "REGION_NOT_FOUND", "Terrain region was not found")
+            record = dict(row)
+            record["region_id"] = region_id
+
+        try:
+            with GeoTiffTerrainSource(
+                Path(record["asset_path"]),
+                dataset_id=record["id"],
+                model_version=record["processing_version"],
+                source_url=record["source_url"],
+                source_frame="MOON_ME / JPL DE421",
+                reference_radius_m=1_737_400.0,
+            ) as source:
+                return build_heightmap(record, source)
+        except TerrainCoverageError as exc:
+            raise APIProblem(
+                422,
+                "TERRAIN_UNAVAILABLE",
+                "Terrain data is unavailable for the requested location.",
+                [{"field": "region_id", "reason": exc.reason}],
+            ) from exc
 
     def submit(self, request, request_id, submitted=None):
         normalized = self.resolve(request, submitted)
+        kind = normalized["kind"]
         job_id = str(uuid4())
         with self.engine.begin() as conn:
             conn.execute(
                 insert(jobs).values(
                     id=job_id,
-                    kind="now",
+                    kind=kind,
                     status="queued",
                     request_id=request_id,
                     submitted=submitted
@@ -206,7 +599,7 @@ class Repository:
             )
         return {
             "job_id": job_id,
-            "kind": "now",
+            "kind": kind,
             "status": "queued",
             "status_url": f"/api/v1/jobs/{job_id}",
             "result_url": f"/api/v1/jobs/{job_id}/result",

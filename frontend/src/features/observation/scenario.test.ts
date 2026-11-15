@@ -1,8 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { buildRequest, initialScenario, serializeUtc } from './scenario'
+import { buildComparisonRequest, buildRequest, buildTimelineRequest, initialScenario, serializeUtc } from './scenario'
 import { catalog } from '../../test/fixtures'
 
 describe('UTC scenario validation', () => {
+  it('allows the same catalog site on different dates with common parameters', () => {
+    const scenarios = [
+      { label: 'July', mode: 'catalog' as const, site: catalog.items[0], name: '', latitude: '', longitude: '', utcTime: '2027-07-15T00:00' },
+      { label: 'August', mode: 'catalog' as const, site: catalog.items[0], name: '', latitude: '', longitude: '', utcTime: '2027-08-15T00:00' },
+    ]
+    expect(buildComparisonRequest(scenarios, { ...initialScenario(), site: catalog.items[0], durationDays: '14', stepMinutes: '120' })).toMatchObject({
+      scenarios: [
+        { label: 'July', site: { site_id: 'development-site' }, start_time: '2027-07-15T00:00:00Z' },
+        { label: 'August', site: { site_id: 'development-site' }, start_time: '2027-08-15T00:00:00Z' },
+      ], duration_days: 14, step_minutes: 120,
+    })
+  })
   it('serializes UTC explicitly without a browser-local conversion', () => {
     expect(serializeUtc('2027-07-15T12:34')).toBe('2027-07-15T12:34:00Z')
     expect(serializeUtc('2027-07-15T12:34:56')).toBe('2027-07-15T12:34:56Z')
@@ -77,5 +89,48 @@ describe('UTC scenario validation', () => {
       visibility_margin_deg: 5,
       horizon_mode: 'geometric',
     })
+  })
+  it('builds the agreed geometric timeline request for both site forms', () => {
+    const draft = {
+      ...initialScenario(),
+      site: catalog.items[0],
+      utcTime: '2027-07-15T12:00',
+    }
+    expect(buildTimelineRequest(draft)).toEqual({
+      site: { site_id: 'development-site' },
+      start_time: '2027-07-15T12:00:00Z',
+      duration_days: 14,
+      step_minutes: 120,
+      horizon_mode: 'geometric',
+      observer_height_m: 2,
+      visibility_margin_deg: 0,
+    })
+    expect(buildTimelineRequest({
+      ...draft,
+      mode: 'custom',
+      latitude: '-89.44',
+      longitude: '222.1',
+    }).site).toEqual({ latitude: -89.44, longitude: 222.1 })
+  })
+  it.each([
+    ['durationDays', '0'],
+    ['durationDays', '30.5'],
+    ['durationDays', '31'],
+    ['stepMinutes', '45'],
+  ])('rejects unsupported timeline %s=%s', (field, value) => {
+    expect(() => buildTimelineRequest({
+      ...initialScenario(),
+      site: catalog.items[0],
+      utcTime: '2027-07-15T12:00',
+      [field]: value,
+    })).toThrow()
+  })
+  it('rejects a timeline whose exclusive period end exceeds supported UTC', () => {
+    expect(() => buildTimelineRequest({
+      ...initialScenario(),
+      site: catalog.items[0],
+      utcTime: '2049-12-31T12:00',
+      durationDays: '1',
+    })).toThrow('period must end')
   })
 })

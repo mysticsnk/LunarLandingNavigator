@@ -5,6 +5,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from app.astronomy.horizons import normalize_longitude
 from app.core.database import check_database
 from app.main import create_app
 from app.maps.catalog import get_layer, get_layers
@@ -115,6 +116,34 @@ def test_wms_request_preserves_contract_bbox_axis_order_and_lunar_crs():
     assert "CRS" not in params
 
 
+def test_high_south_latitude_coordinate_uses_same_provider_position_after_wrap():
+    latitude = -89.44
+    longitude = normalize_longitude(222.1)
+    assert longitude == normalize_longitude(-137.9) == -137.9
+    assert normalize_longitude(359.9) == -0.1
+    assert normalize_longitude(180) == -180
+
+    matrix = WMTS_MATRICES["8"]
+    row = int((90 - latitude) / 180 * matrix.height)
+    col = int((longitude + 180) / 360 * matrix.width)
+    assert (row, col) == (255, 59)
+    assert build_wmts_url("8", row, col).endswith("/8/255/59.jpg")
+
+    bbox = "-137.95,-89.49,-137.85,-89.39"
+    _, params = build_wms_request(get_layer("luna_wac_roi_south_summer"), bbox, 256, 256)
+    assert params["SRS"] == "IAU2000:30100"
+    assert params["BBOX"] == bbox
+
+
+def test_south_pole_layer_extent_matches_product_coverage_and_rejects_north_of_it():
+    layer = get_layer("luna_wac_roi_south_summer")
+    assert layer.extent == [-180, -90, 180, -45]
+    with pytest.raises(MapServiceError) as error:
+        build_wms_request(layer, "-138,-44.9,-137.9,-44.8", 64, 64)
+    assert error.value.status_code == 422
+    assert error.value.details[0]["reason"] == "outside_layer_extent"
+
+
 @pytest.mark.parametrize(
     "bbox,width,height,reason",
     [
@@ -190,6 +219,16 @@ def test_unsupported_operation_and_invalid_bbox_return_validation_errors(client)
     assert unsupported.status_code == invalid.status_code == 422
     assert unsupported.json()["error"]["code"] == "VALIDATION_ERROR"
     assert invalid.json()["error"]["details"][0]["reason"] == "invalid_bbox_extent"
+
+
+def test_polar_wms_route_rejects_bbox_north_of_verified_product_coverage(client):
+    response = client.get(
+        "/api/v1/map/layers/luna_wac_roi_south_summer/image",
+        params={"bbox": "-138,-44.9,-137.9,-44.8", "width": 64, "height": 64},
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert response.json()["error"]["details"][0]["reason"] == "outside_layer_extent"
 
 
 def test_wmts_route_returns_actual_image_content_type(client, monkeypatch):

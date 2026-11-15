@@ -5,6 +5,7 @@ import { SceneErrorBoundary } from './SceneErrorBoundary'
 import { LunarScene } from './LunarScene'
 import { enuToLocalScene, azimuthElevationToEnu } from '../../lib/coordinates'
 import type { ObservationPoint } from './types'
+import { heightmapFixture } from '../../test/fixtures'
 
 // Polyfill ResizeObserver for jsdom environment
 beforeAll(() => {
@@ -144,6 +145,57 @@ describe('LunarScene component and coordinate orientation', () => {
     expect(screen.queryByTestId('hud-sun-label')).toBeNull()
     expect(screen.getByText('Sun: Awaiting vector')).toBeInTheDocument()
   })
+
+  it('rejects invalid or non-unit ENU vectors safely without crashing', () => {
+    render(
+      <LunarScene
+        sunDirectionEnu={{ east: 2.0, north: 0, up: 0 }}
+        earthDirectionEnu={{ east: Number.NaN, north: 0, up: 0 }}
+      />,
+    )
+    expect(screen.getByText('Sun: Awaiting vector')).toBeInTheDocument()
+    expect(screen.getByText('Earth: Awaiting vector')).toBeInTheDocument()
+  })
+
+  it('maps all six cardinal ENU directions to agreed 3D scene coordinates', () => {
+    // East: [1, 0, 0] -> [1, 0, 0]
+    expect(enuToLocalScene({ east: 1, north: 0, up: 0 })).toEqual({
+      x: 1,
+      y: 0,
+      z: -0,
+    })
+    // North: [0, 1, 0] -> [0, 0, -1]
+    expect(enuToLocalScene({ east: 0, north: 1, up: 0 })).toEqual({
+      x: 0,
+      y: 0,
+      z: -1,
+    })
+    // Up / Zenith: [0, 0, 1] -> [0, 1, 0]
+    expect(enuToLocalScene({ east: 0, north: 0, up: 1 })).toEqual({
+      x: 0,
+      y: 1,
+      z: -0,
+    })
+    // West: [-1, 0, 0] -> [-1, 0, 0]
+    expect(enuToLocalScene({ east: -1, north: 0, up: 0 })).toEqual({
+      x: -1,
+      y: 0,
+      z: -0,
+    })
+    // South: [0, -1, 0] -> [0, 0, 1]
+    expect(enuToLocalScene({ east: 0, north: -1, up: 0 })).toEqual({
+      x: 0,
+      y: 0,
+      z: 1,
+    })
+    // Down / Nadir: [0, 0, -1] -> [0, -1, 0]
+    expect(enuToLocalScene({ east: 0, north: 0, up: -1 })).toEqual({
+      x: 0,
+      y: -1,
+      z: -0,
+    })
+  })
+
   it('applies agreed scene orientation (scene.x = east, scene.y = up, scene.z = -north)', () => {
     // East: (1, 0, 0)
     const eastScene = enuToLocalScene({ east: 1, north: 0, up: 0 })
@@ -274,12 +326,115 @@ describe('LunarScene component and coordinate orientation', () => {
     expect(screen.getByTestId('hud-sun-label')).toHaveTextContent(/El 4.5°/)
   })
 
-  it('displays geometric horizon reference notice indicating no terrain occlusion in Stage 1', () => {
+  it('displays the geometric horizon reference when no heightmap is available', () => {
     render(<LunarScene />)
     const notice = screen.getByTestId('scene-horizon-notice')
     expect(notice).toHaveTextContent(
       /Geometric Reference Horizon \(Elevation 0.0°\)/,
     )
     expect(notice).toHaveTextContent(/Terrain occlusion not modeled/)
+  })
+
+  describe('Stage 4 Local Terrain Mesh & Awareness', () => {
+    it('renders terrain mesh provenance footer when heightmap is provided', () => {
+      render(
+        <LunarScene
+          heightmap={heightmapFixture}
+          horizonMode="terrain"
+          terrainDatasetId={heightmapFixture.dataset_id}
+          visibilityMarginDeg={0.5}
+        />,
+      )
+      const notice = screen.getByTestId('scene-horizon-notice')
+      expect(notice).toHaveTextContent(/Terrain Mesh: LDEM_80S_20MPP_ADJ/i)
+      expect(notice).toHaveTextContent(/stage4-dem-v1/i)
+      expect(notice).toHaveTextContent(/50m/i)
+      expect(notice).toHaveTextContent(/Backend visibility authoritative/i)
+      expect(notice).toHaveTextContent(/terrain mode · margin 0.5°/i)
+    })
+
+    it('displays loading overlay when terrain is loading', () => {
+      render(<LunarScene isTerrainLoading={true} />)
+      expect(screen.getByTestId('scene-loading-overlay')).toBeInTheDocument()
+      expect(screen.getByText(/Loading terrain heightmap/i)).toBeInTheDocument()
+    })
+
+    it('reports a display mesh error without implying a horizon mode fallback', () => {
+      render(
+        <LunarScene
+          horizonMode="terrain"
+          terrainDatasetId="test-dem-v1"
+          terrainError="HTTP 404: Heightmap not found for region invalid-id"
+        />,
+      )
+      expect(screen.getByTestId('scene-terrain-error-notice')).toBeInTheDocument()
+      expect(
+        screen.getByText(/Terrain mesh unavailable/i),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByText(/visibility still uses the selected API horizon mode/i),
+      ).toBeInTheDocument()
+      expect(screen.getByTestId('scene-horizon-notice')).toHaveTextContent(/Terrain-aware result/)
+      expect(screen.getByTestId('scene-horizon-notice')).toHaveTextContent(/visibility from API/)
+    })
+
+    it('displays body horizon elevation in HUD when horizon_elevation_deg is set', () => {
+      const terrainPoint: ObservationPoint = {
+        timestamp: '2026-11-14T12:00:00Z',
+        sun: {
+          azimuth_deg: 180.0,
+          elevation_deg: 2.5,
+          horizon_elevation_deg: 1.2,
+          visible: true,
+          direction_enu: azimuthElevationToEnu(180.0, 2.5),
+        },
+        earth: {
+          azimuth_deg: 0.0,
+          elevation_deg: 3.0,
+          horizon_elevation_deg: 4.1,
+          visible: false,
+          direction_enu: azimuthElevationToEnu(0.0, 3.0),
+        },
+        is_golden_window: false,
+      }
+
+      render(
+        <LunarScene
+          observationPoint={terrainPoint}
+          heightmap={heightmapFixture}
+        />,
+      )
+
+      expect(screen.getByTestId('hud-sun-label')).toHaveTextContent(
+        /Sun: Az 180.0° · El 2.5° \(Hrz 1.2°\) \(Visible\)/,
+      )
+      expect(screen.getByTestId('hud-earth-label')).toHaveTextContent(
+        /Earth: Az 0.0° · El 3.0° \(Hrz 4.1°\) \(Not visible\)/,
+      )
+    })
+
+    it('displays explicit terrain-unavailable notice when no heightmap is loaded (Task 5)', () => {
+      render(
+        <LunarScene
+          observationPoint={null}
+          heightmap={null}
+        />,
+      )
+
+      expect(screen.getByTestId('terrain-unavailable-notice')).toBeInTheDocument()
+      expect(
+        screen.getByText(/No display heightmap loaded/i),
+      ).toBeInTheDocument()
+      expect(screen.queryByText(/DEM available for Shackleton/i)).not.toBeInTheDocument()
+    })
+
+    it('does not describe missing terrain display data as a geometric fallback in terrain mode', () => {
+      render(<LunarScene horizonMode="terrain" observationPoint={null} heightmap={null} />)
+
+      expect(screen.getByTestId('terrain-unavailable-notice')).toHaveTextContent(
+        'Terrain visibility remains API-provided.',
+      )
+      expect(screen.queryByText(/Displaying geometric horizon reference/i)).not.toBeInTheDocument()
+    })
   })
 })

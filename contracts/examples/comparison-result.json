@@ -26,6 +26,18 @@
         "average_sun_elevation_deg": 15,
         "next_sunset_at": "2027-07-15T06:00:00Z",
         "next_earthset_at": "2027-07-15T18:00:00Z"
+      },
+      "provenance": {
+        "model_version": "development-fixture-v1",
+        "terrain_dataset_id": null,
+        "sources": [
+          {
+            "name": "Synthetic fixture; no live scientific calculation",
+            "url": "https://example.org/development-fixtures",
+            "version": "fixture-v1",
+            "fetched_at": "2027-07-15T00:00:00Z"
+          }
+        ]
       }
     },
     {
@@ -53,13 +65,25 @@
         "average_sun_elevation_deg": 0,
         "next_sunset_at": "2027-07-15T06:00:00Z",
         "next_earthset_at": "2027-07-15T12:00:00Z"
+      },
+      "provenance": {
+        "model_version": "geometric-timeline-v1",
+        "terrain_dataset_id": null,
+        "sources": [
+          {
+            "name": "Synthetic fixture; no live scientific calculation",
+            "url": "https://example.org/development-fixtures",
+            "version": "fixture-v1",
+            "fetched_at": "2027-07-15T00:00:00Z"
+          }
+        ]
       }
     }
   ],
   "recommended_label": "Synthetic A",
   "recommendation_reason": "Synthetic A has the higher unrounded v1 product score in this development fixture.",
   "meta": {
-    "model_version": "development-fixture-v1",
+    "model_version": "comparison-v1",
     "generated_at": "2027-07-16T00:00:00Z",
     "data_status": "fresh",
     "horizon_mode": "geometric",

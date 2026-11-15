@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * getHealth
-         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 1; observation submissions use geometric mode only.
+         * @description Implemented. Responses use UTC timestamps ending in Z, and unknown query parameters are rejected.
          */
         get: operations["getHealth"];
         put?: never;
@@ -33,7 +33,7 @@ export interface paths {
         };
         /**
          * listSites
-         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 1; observation submissions use geometric mode only.
+         * @description Implemented. Responses use UTC timestamps ending in Z, and unknown query parameters are rejected.
          */
         get: operations["listSites"];
         put?: never;
@@ -53,7 +53,7 @@ export interface paths {
         };
         /**
          * getSite
-         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 1; observation submissions use geometric mode only.
+         * @description Implemented. Responses use UTC timestamps ending in Z, and unknown query parameters are rejected.
          */
         get: operations["getSite"];
         put?: never;
@@ -73,7 +73,7 @@ export interface paths {
         };
         /**
          * listLayers
-         * @description Planned contract only. Not registered by this Stage 1 backend unless an external map router is explicitly supplied. Timeline, comparison and physical terrain occlusion are excluded.
+         * @description Implemented in Stage 2. This registered imagery route accepts only known lunar layers; timeline, comparison and physical terrain occlusion are excluded.
          */
         get: operations["listLayers"];
         put?: never;
@@ -93,7 +93,7 @@ export interface paths {
         };
         /**
          * getLayer
-         * @description Planned contract only. Not registered by this Stage 1 backend unless an external map router is explicitly supplied. Timeline, comparison and physical terrain occlusion are excluded.
+         * @description Implemented in Stage 2. This registered imagery route accepts only known lunar layers; timeline, comparison and physical terrain occlusion are excluded.
          */
         get: operations["getLayer"];
         put?: never;
@@ -113,7 +113,7 @@ export interface paths {
         };
         /**
          * getMapTile
-         * @description Planned contract only. Not registered by this Stage 1 backend unless an external map router is explicitly supplied. Timeline, comparison and physical terrain occlusion are excluded.
+         * @description Implemented in Stage 2. This registered imagery route accepts only known lunar layers; timeline, comparison and physical terrain occlusion are excluded.
          */
         get: operations["getMapTile"];
         put?: never;
@@ -133,7 +133,7 @@ export interface paths {
         };
         /**
          * getMapImage
-         * @description Planned contract only. Not registered by this Stage 1 backend unless an external map router is explicitly supplied. Timeline, comparison and physical terrain occlusion are excluded.
+         * @description Implemented in Stage 2. This registered imagery route accepts only known lunar layers; timeline, comparison and physical terrain occlusion are excluded.
          */
         get: operations["getMapImage"];
         put?: never;
@@ -153,7 +153,7 @@ export interface paths {
         };
         /**
          * getTerrainCoverage
-         * @description Planned contract only. Not registered by this Stage 1 backend unless an external map router is explicitly supplied. Timeline, comparison and physical terrain occlusion are excluded.
+         * @description Reports usable numerical terrain support from a registered prepared dataset; raw imagery extents do not establish terrain availability.
          */
         get: operations["getTerrainCoverage"];
         put?: never;
@@ -173,7 +173,7 @@ export interface paths {
         };
         /**
          * getHeightmap
-         * @description Planned contract only. Not registered by this Stage 1 backend unless an external map router is explicitly supplied. Timeline, comparison and physical terrain occlusion are excluded.
+         * @description Returns a bounded local ENU display grid for a registered terrain region. Physical visibility calculations use the source elevation data.
          */
         get: operations["getHeightmap"];
         put?: never;
@@ -193,7 +193,7 @@ export interface paths {
         };
         /**
          * listCSAResources
-         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 1; observation submissions use geometric mode only.
+         * @description Implemented. Responses use UTC timestamps ending in Z, and unknown query parameters are rejected.
          */
         get: operations["listCSAResources"];
         put?: never;
@@ -215,7 +215,7 @@ export interface paths {
         put?: never;
         /**
          * submitNowRequest
-         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 1; observation submissions use geometric mode only.
+         * @description Implemented in Stage 4. Accepts geometric or supported terrain mode; terrain requests never fall back to geometric mode.
          */
         post: operations["submitNowRequest"];
         delete?: never;
@@ -235,7 +235,7 @@ export interface paths {
         put?: never;
         /**
          * submitTimelineRequest
-         * @description Planned contract only. Not registered by this Stage 1 backend unless an external map router is explicitly supplied. Timeline, comparison and physical terrain occlusion are excluded.
+         * @description Implemented in Stage 3 and extended in Stage 4. Accepts geometric or supported terrain mode; terrain requests never fall back to geometric mode.
          */
         post: operations["submitTimelineRequest"];
         delete?: never;
@@ -255,7 +255,7 @@ export interface paths {
         put?: never;
         /**
          * submitComparisonRequest
-         * @description Planned contract only. Not registered by this Stage 1 backend unless an external map router is explicitly supplied. Timeline, comparison and physical terrain occlusion are excluded.
+         * @description Stage 5 comparison job using shared settings and the agreed v1 ranking.
          */
         post: operations["submitComparisonRequest"];
         delete?: never;
@@ -273,7 +273,7 @@ export interface paths {
         };
         /**
          * getJob
-         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 1; observation submissions use geometric mode only.
+         * @description Implemented. Results may use geometric or terrain mode as recorded in their result metadata. Responses use UTC timestamps ending in Z.
          */
         get: operations["getJob"];
         put?: never;
@@ -293,7 +293,7 @@ export interface paths {
         };
         /**
          * getJobResult
-         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 1; observation submissions use geometric mode only.
+         * @description Implemented. Results may use geometric or terrain mode as recorded in their result metadata. Responses use UTC timestamps ending in Z.
          */
         get: operations["getJobResult"];
         put?: never;
@@ -601,7 +601,28 @@ export interface components {
             end_time: string;
             score: number;
             summary: components["schemas"]["Summary"];
+            provenance: components["schemas"]["ScenarioProvenance"];
         };
+        /** @description Actual calculation model, resolved terrain dataset (null only in geometric mode), and inputs used for this scenario. */
+        ScenarioProvenance: {
+            model_version: string;
+            terrain_dataset_id: string | null;
+            sources: components["schemas"]["Source"][];
+        };
+        /** @description Shared calculation settings and aggregation provenance. In terrain mode terrain_dataset_id is set only when every scenario uses the same dataset; per-scenario values are in ranked_scenarios[].provenance. */
+        ComparisonMeta: {
+            model_version: string;
+            /** Format: date-time */
+            generated_at: string;
+            /** @enum {string} */
+            data_status: "fresh" | "cached";
+            /** @enum {string} */
+            horizon_mode: "geometric" | "terrain";
+            /** @enum {integer} */
+            time_resolution_minutes: 15 | 30 | 60 | 120 | 180 | 360;
+            terrain_dataset_id: string | null;
+            sources: components["schemas"]["Source"][];
+        } & unknown;
         /** @description score=0.40*sunlit_pct+0.30*earth_visible_pct+0.30*golden_pct. Sort descending by unrounded score, then longest_golden_window_hours, then original request order. This is a product score, not an official NASA criterion. No point arrays. Formula changes require a new ranking_version. */
         ComparisonResult: {
             /** @constant */
@@ -609,13 +630,13 @@ export interface components {
             ranked_scenarios: components["schemas"]["RankedScenario"][];
             recommended_label: string;
             recommendation_reason: string;
-            meta: components["schemas"]["Meta"];
-        } & {
+            meta: components["schemas"]["ComparisonMeta"];
+        } & ({
             meta: {
                 /** @enum {integer} */
                 time_resolution_minutes?: 15 | 30 | 60 | 120 | 180 | 360;
             };
-        };
+        } & unknown);
         JobAccepted: {
             /** Format: uuid */
             job_id: string;

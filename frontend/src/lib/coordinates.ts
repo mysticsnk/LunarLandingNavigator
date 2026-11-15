@@ -275,3 +275,147 @@ export function normalizeVector(v: Vector3D): Vector3D {
     z: v.z / norm,
   }
 }
+
+/**
+ * Converts topocentric East-North-Up (ENU) unit direction vector at a specific lunar surface
+ * coordinate to the global Moon-Centered Moon-Fixed (MCMF) Cartesian frame.
+ *
+ * @param enu - Validated topocentric ENU unit vector
+ * @param coord - Lunar coordinate of the observer (latitude [-90, 90], longitude [-180, 360))
+ * @returns Unit 3D vector in Moon-fixed Cartesian frame
+ */
+export function enuToMoonFixed(enu: EnuVector, coord: LunarCoordinate): Vector3D {
+  if (!isValidDirectionVector(enu)) {
+    throw new Error(
+      `Invalid ENU direction vector: expected unit length, received [${enu.east}, ${enu.north}, ${enu.up}]`,
+    )
+  }
+
+  const { latitude, longitude } = coord
+  if (!Number.isFinite(latitude) || latitude < -90.0 || latitude > 90.0) {
+    throw new RangeError(`Latitude must be within [-90, 90] degrees, received: ${latitude}`)
+  }
+
+  const normLon = normalizeLongitude(longitude)
+  const latRad = (latitude * Math.PI) / 180.0
+  const lonRad = (normLon * Math.PI) / 180.0
+
+  const cosLat = Math.cos(latRad)
+  const sinLat = Math.sin(latRad)
+  const cosLon = Math.cos(lonRad)
+  const sinLon = Math.sin(lonRad)
+
+  // Local East unit vector in MCMF: [-sin(lon), cos(lon), 0]
+  const eastMcmf = { x: -sinLon, y: cosLon, z: 0.0 }
+
+  // Local North unit vector in MCMF: [-sin(lat)*cos(lon), -sin(lat)*sin(lon), cos(lat)]
+  const northMcmf = {
+    x: -sinLat * cosLon,
+    y: -sinLat * sinLon,
+    z: cosLat,
+  }
+
+  // Local Up unit vector in MCMF: [cos(lat)*cos(lon), cos(lat)*sin(lon), sin(lat)]
+  const upMcmf = {
+    x: cosLat * cosLon,
+    y: cosLat * sinLon,
+    z: sinLat,
+  }
+
+  const x = enu.east * eastMcmf.x + enu.north * northMcmf.x + enu.up * upMcmf.x
+  const y = enu.east * eastMcmf.y + enu.north * northMcmf.y + enu.up * upMcmf.y
+  const z = enu.east * eastMcmf.z + enu.north * northMcmf.z + enu.up * upMcmf.z
+
+  return {
+    x: Math.round(x * 1e8) / 1e8,
+    y: Math.round(y * 1e8) / 1e8,
+    z: Math.round(z * 1e8) / 1e8,
+  }
+}
+
+/**
+ * Converts global Moon-Centered Moon-Fixed (MCMF) unit direction vector
+ * back to topocentric East-North-Up (ENU) coordinates at a specific surface location.
+ *
+ * @param mcmf - Unit vector in Moon-fixed frame
+ * @param coord - Lunar coordinate of the observer
+ * @returns Topocentric ENU unit vector
+ */
+export function moonFixedToEnu(mcmf: Vector3D, coord: LunarCoordinate): EnuVector {
+  if (!isValidDirectionVector(mcmf)) {
+    throw new Error(
+      `Invalid MCMF direction vector: expected unit length, received [${mcmf.x}, ${mcmf.y}, ${mcmf.z}]`,
+    )
+  }
+
+  const { latitude, longitude } = coord
+  if (!Number.isFinite(latitude) || latitude < -90.0 || latitude > 90.0) {
+    throw new RangeError(`Latitude must be within [-90, 90] degrees, received: ${latitude}`)
+  }
+
+  const normLon = normalizeLongitude(longitude)
+  const latRad = (latitude * Math.PI) / 180.0
+  const lonRad = (normLon * Math.PI) / 180.0
+
+  const cosLat = Math.cos(latRad)
+  const sinLat = Math.sin(latRad)
+  const cosLon = Math.cos(lonRad)
+  const sinLon = Math.sin(lonRad)
+
+  const east = mcmf.x * (-sinLon) + mcmf.y * cosLon
+  const north = mcmf.x * (-sinLat * cosLon) + mcmf.y * (-sinLat * sinLon) + mcmf.z * cosLat
+  const up = mcmf.x * (cosLat * cosLon) + mcmf.y * (cosLat * sinLon) + mcmf.z * sinLat
+
+  return {
+    east: Math.round(east * 1e8) / 1e8,
+    north: Math.round(north * 1e8) / 1e8,
+    up: Math.round(up * 1e8) / 1e8,
+  }
+}
+
+/**
+ * Maps global Moon-Centered Moon-Fixed (MCMF) coordinates to Three.js global scene frame.
+ *
+ * Global scene mapping:
+ * - scene.x = +mcmf.x (Prime Meridian at equator)
+ * - scene.y = +mcmf.z (Lunar North Pole aligned with Three.js camera Up)
+ * - scene.z = -mcmf.y (90° East points towards -Z, maintaining right-handed Cartesian frame)
+ *
+ * @param mcmf - Vector in MCMF coordinates
+ * @param radius - Sphere radius multiplier (default: 1.0)
+ * @returns 3D vector in global Three.js scene coordinates
+ */
+export function moonFixedToGlobalScene(mcmf: Vector3D, radius = 1.0): Vector3D {
+  return {
+    x: mcmf.x * radius,
+    y: mcmf.z * radius,
+    z: -mcmf.y * radius,
+  }
+}
+
+/**
+ * Inverse mapping from global Three.js scene coordinates to MCMF.
+ *
+ * @param scene - Vector in global scene coordinates
+ * @param radius - Sphere radius multiplier (default: 1.0)
+ * @returns Vector in MCMF coordinates
+ */
+export function globalSceneToMoonFixed(scene: Vector3D, radius = 1.0): Vector3D {
+  return {
+    x: scene.x / radius,
+    y: -scene.z / radius,
+    z: scene.y / radius,
+  }
+}
+
+/**
+ * Converts lunar latitude/longitude directly to 3D position in the global Three.js scene.
+ *
+ * @param coord - Lunar coordinate (lat [-90, 90], lon [-180, 360))
+ * @param radius - Lunar sphere radius in scene units (default: 1.0)
+ * @returns Position vector on sphere surface in global scene coordinates
+ */
+export function latLonToGlobalScene(coord: LunarCoordinate, radius = 1.0): Vector3D {
+  const mcmf = latLonToMoonFixedUnit(coord)
+  return moonFixedToGlobalScene(mcmf, radius)
+}

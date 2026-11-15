@@ -10,9 +10,14 @@ import type {
   Job,
   NowRequest,
   NowResult,
+  TimelineRequest,
+  TimelineResult,
   CSAResources,
   LayerList,
   TerrainCoverage,
+  Heightmap,
+  ComparisonRequest,
+  ComparisonResult,
 } from './types'
 
 export interface ApiClientConfig {
@@ -117,6 +122,113 @@ function body(value: unknown): boolean {
   )
 }
 
+function timelineWindow(value: unknown, start: number, end: number): boolean {
+  return (
+    record(value) &&
+    utc(value.start_time) &&
+    utc(value.end_time) &&
+    typeof value.duration_hours === 'number' &&
+    Number.isFinite(value.duration_hours) &&
+    value.duration_hours > 0 &&
+    Date.parse(value.start_time) >= start &&
+    Date.parse(value.end_time) <= end &&
+    Date.parse(value.end_time) > Date.parse(value.start_time) &&
+    Math.abs(
+      value.duration_hours -
+        (Date.parse(value.end_time) - Date.parse(value.start_time)) / 3_600_000,
+    ) < 1e-9
+  )
+}
+
+function timelineWindows(value: unknown, start: number, end: number): boolean {
+  if (!Array.isArray(value) || !value.every((window) => timelineWindow(window, start, end)))
+    return false
+  return value.every(
+    (window, index) =>
+      index === 0 ||
+      Date.parse(value[index - 1].end_time) <= Date.parse(window.start_time),
+  )
+}
+
+function timelineResult(value: unknown): value is TimelineResult {
+  if (
+    !record(value) ||
+    !record(value.site) ||
+    !(value.site.site_id === null || typeof value.site.site_id === 'string') ||
+    typeof value.site.name !== 'string' ||
+    !number(value.site.latitude, -90, 90) ||
+    !number(value.site.longitude, -180, 180) ||
+    value.site.longitude === 180 ||
+    !number(value.site.observer_height_m, 0, 20) ||
+    !Number.isFinite(value.site.surface_elevation_m) ||
+    !utc(value.start_time) ||
+    !utc(value.end_time) ||
+    ![15, 30, 60, 120, 180, 360].includes(value.step_minutes as number) ||
+    !Number.isInteger(value.total_samples) ||
+    !Array.isArray(value.points) ||
+    value.points.length !== value.total_samples ||
+    value.total_samples < 1 ||
+    !record(value.summary) ||
+    !record(value.meta)
+  )
+    return false
+
+  const start = Date.parse(value.start_time)
+  const end = Date.parse(value.end_time)
+  const step = Number(value.step_minutes) * 60_000
+  if (end <= start || (end - start) % step || (end - start) / step !== value.total_samples)
+    return false
+
+  if (
+    !value.points.every(
+      (point, index) =>
+        record(point) &&
+        utc(point.timestamp) &&
+        Date.parse(point.timestamp) === start + index * step &&
+        record(point.sun) &&
+        body(point.sun) &&
+        record(point.earth) &&
+        body(point.earth) &&
+        typeof point.is_golden_window === 'boolean',
+    ) ||
+    !timelineWindows(value.sunlight_windows, start, end) ||
+    !timelineWindows(value.earth_visibility_windows, start, end) ||
+    !timelineWindows(value.golden_windows, start, end)
+  )
+    return false
+
+  const summary = value.summary
+  const meta = value.meta
+  return (
+    number(summary.sunlit_hours, 0, 720) &&
+    number(summary.sunlit_pct, 0, 100) &&
+    number(summary.earth_visible_hours, 0, 720) &&
+    number(summary.earth_visible_pct, 0, 100) &&
+    number(summary.golden_hours, 0, 720) &&
+    number(summary.golden_pct, 0, 100) &&
+    number(summary.longest_golden_window_hours, 0, 720) &&
+    number(summary.average_sun_elevation_deg, -90, 90) &&
+    (summary.next_sunset_at === null || utc(summary.next_sunset_at)) &&
+    (summary.next_earthset_at === null || utc(summary.next_earthset_at)) &&
+    typeof meta.model_version === 'string' &&
+    utc(meta.generated_at) &&
+    ['fresh', 'cached'].includes(String(meta.data_status)) &&
+    meta.horizon_mode === 'geometric' &&
+    meta.time_resolution_minutes === value.step_minutes &&
+    meta.terrain_dataset_id === null &&
+    Array.isArray(meta.sources) &&
+    meta.sources.length > 0 &&
+    meta.sources.every(
+      (source) =>
+        record(source) &&
+        typeof source.name === 'string' &&
+        typeof source.url === 'string' &&
+        (source.version === null || typeof source.version === 'string') &&
+        utc(source.fetched_at),
+    )
+  )
+}
+
 export class ApiClient {
   readonly baseUrl: string
   readonly defaultTimeoutMs: number
@@ -129,7 +241,7 @@ export class ApiClient {
   private async request<T>(
     path: string,
     options?: RequestOptions,
-    payload?: NowRequest,
+    payload?: NowRequest | TimelineRequest | ComparisonRequest,
     expectedStatus = 200,
   ): Promise<T> {
     if (options?.signal?.aborted) {
@@ -292,6 +404,39 @@ export class ApiClient {
     return value
   }
 
+  async submitTimeline(
+    payload: TimelineRequest,
+    options?: RequestOptions,
+  ): Promise<JobAccepted> {
+    const value = await this.request<JobAccepted>(
+      '/api/v1/ephemeris/timeline',
+      options,
+      payload,
+      202,
+    )
+    if (
+      !value ||
+      !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value.job_id) ||
+      value.kind !== 'timeline' ||
+      value.status !== 'queued' ||
+      value.status_url !== `/api/v1/jobs/${value.job_id}` ||
+      value.result_url !== `/api/v1/jobs/${value.job_id}/result`
+    )
+      invalidResponse()
+    return value
+  }
+
+  async submitComparison(payload: ComparisonRequest, options?: RequestOptions): Promise<JobAccepted> {
+    const value = await this.request<JobAccepted>(
+      '/api/v1/ephemeris/compare', options, payload, 202,
+    )
+    if (!value || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value.job_id) ||
+      value.kind !== 'comparison' || value.status !== 'queued' ||
+      value.status_url !== `/api/v1/jobs/${value.job_id}` ||
+      value.result_url !== `/api/v1/jobs/${value.job_id}/result`) invalidResponse()
+    return value
+  }
+
   private jobPath(path: string, result: boolean): string {
     const pattern =
       /^\/api\/v1\/jobs\/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}(\/result)?$/i
@@ -305,7 +450,7 @@ export class ApiClient {
     const value = await this.request<Job>(path, options)
     if (
       !value ||
-      value.kind !== 'now' ||
+      !['now', 'timeline', 'comparison'].includes(value.kind) ||
       value.job_id !== path.split('/').pop() ||
       !['queued', 'running', 'succeeded', 'failed'].includes(value.status) ||
       (value.status === 'failed' && !apiError(value.error))
@@ -353,6 +498,42 @@ export class ApiClient {
       )
     )
       invalidResponse()
+    return value
+  }
+
+  async getTimelineResult(
+    resultUrl: string,
+    options?: RequestOptions,
+  ): Promise<TimelineResult> {
+    const value = await this.request<TimelineResult>(
+      this.jobPath(resultUrl, true),
+      options,
+    )
+    if (!timelineResult(value)) invalidResponse()
+    return value
+  }
+
+  async getComparisonResult(resultUrl: string, options?: RequestOptions): Promise<ComparisonResult> {
+    const value = await this.request<ComparisonResult>(this.jobPath(resultUrl, true), options)
+    if (!record(value) || value.ranking_version !== 'v1' ||
+      !Array.isArray(value.ranked_scenarios) || value.ranked_scenarios.length < 2 || value.ranked_scenarios.length > 6 ||
+      typeof value.recommended_label !== 'string' || typeof value.recommendation_reason !== 'string' || !record(value.meta) ||
+      typeof value.meta.model_version !== 'string' || !utc(value.meta.generated_at) ||
+      !['fresh', 'cached'].includes(value.meta.data_status) || !['geometric', 'terrain'].includes(value.meta.horizon_mode) ||
+      ![15, 30, 60, 120, 180, 360].includes(value.meta.time_resolution_minutes as number) ||
+      !(value.meta.terrain_dataset_id === null || typeof value.meta.terrain_dataset_id === 'string') ||
+      !Array.isArray(value.meta.sources) || value.meta.sources.length === 0 || !value.meta.sources.every((source) =>
+        record(source) && typeof source.name === 'string' && typeof source.url === 'string' &&
+        (source.version === null || typeof source.version === 'string') && utc(source.fetched_at)) ||
+      !value.ranked_scenarios.every((scenario, index) => record(scenario) && scenario.rank === index + 1 &&
+        typeof scenario.label === 'string' && record(scenario.site) && typeof scenario.site.name === 'string' &&
+        number(scenario.site.latitude, -90, 90) && number(scenario.site.longitude, -180, 180) && scenario.site.longitude !== 180 &&
+        utc(scenario.start_time) && utc(scenario.end_time) && number(scenario.score, 0, 100) && record(scenario.summary) &&
+        number(scenario.summary.sunlit_pct, 0, 100) && number(scenario.summary.earth_visible_pct, 0, 100) &&
+        number(scenario.summary.golden_pct, 0, 100) && number(scenario.summary.longest_golden_window_hours, 0, 720)) ||
+      new Set(value.ranked_scenarios.map((scenario) => scenario.label)).size !== value.ranked_scenarios.length ||
+      value.ranked_scenarios[0]?.label !== value.recommended_label)
+      invalidResponse('Invalid comparison result')
     return value
   }
 
@@ -435,6 +616,53 @@ export class ApiClient {
       )
     )
       invalidResponse()
+    return value
+  }
+
+  async getHeightmap(
+    regionId: string,
+    options?: RequestOptions,
+  ): Promise<Heightmap> {
+    const value = await this.request<Heightmap>(
+      `/api/v1/terrain/regions/${encodeURIComponent(regionId)}/heightmap`,
+      options,
+    )
+    if (
+      !record(value) ||
+      value.region_id !== regionId ||
+      typeof value.dataset_id !== 'string' ||
+      typeof value.model_version !== 'string' ||
+      value.frame !== 'local_enu' ||
+      !record(value.origin) ||
+      typeof value.origin.latitude !== 'number' ||
+      !Number.isFinite(value.origin.latitude) ||
+      typeof value.origin.longitude !== 'number' ||
+      !Number.isFinite(value.origin.longitude) ||
+      typeof value.origin.elevation_m !== 'number' ||
+      !Number.isFinite(value.origin.elevation_m) ||
+      typeof value.east_min_m !== 'number' ||
+      !Number.isFinite(value.east_min_m) ||
+      typeof value.north_min_m !== 'number' ||
+      !Number.isFinite(value.north_min_m) ||
+      typeof value.spacing_m !== 'number' ||
+      !Number.isFinite(value.spacing_m) ||
+      value.spacing_m <= 0 ||
+      typeof value.width !== 'number' ||
+      !Number.isInteger(value.width) ||
+      value.width <= 0 ||
+      typeof value.height !== 'number' ||
+      !Number.isInteger(value.height) ||
+      value.height <= 0 ||
+      !Array.isArray(value.elevation_m) ||
+      value.elevation_m.length !== value.width * value.height ||
+      !value.elevation_m.every(
+        (v) => typeof v === 'number' && Number.isFinite(v),
+      ) ||
+      typeof value.source_url !== 'string' ||
+      typeof value.attribution !== 'string'
+    ) {
+      invalidResponse('Unsupported or invalid terrain heightmap metadata')
+    }
     return value
   }
 }

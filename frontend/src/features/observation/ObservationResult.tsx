@@ -33,7 +33,7 @@ export function ObservationResult({ result, request, coverage }: { result: NowRe
           </p>
           <div className="table-scroll">
             <table className="observation-table">
-              <caption>Returned geometric observation values</caption>
+              <caption>Returned observation values</caption>
               <thead>
                 <tr>
                   <th>Body</th>

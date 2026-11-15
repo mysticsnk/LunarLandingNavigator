@@ -3,59 +3,286 @@ import logging
 import multiprocessing
 import signal
 import time
+from contextlib import contextmanager
 from copy import deepcopy
+from pathlib import Path
 
 from app.astronomy import (
     HorizonsError,
     HorizonsHttpError,
     HorizonsProvider,
     HorizonsTransportError,
-    calculate_geometric_observation,
+    calculate_observation,
+    calculate_timeline,
 )
 from app.core.config import get_settings
 from app.core.problems import APIProblem
 from app.requests import canonical_time
-from app.results import NowResult
-from app.storage import MODEL_VERSION, get_repository, iso, utcnow
+from app.results import ComparisonMeta, ComparisonResult, NowResult, Source, TimelineResult
+from app.storage import get_repository, iso, request_key, utcnow
 
 LOGGER = logging.getLogger(__name__)
 HORIZONS_LOCK = 740101
 
 
-def execute_observation(normalized):
+@contextmanager
+def terrain_service_for(normalized):
+    if normalized["horizon_mode"] == "geometric":
+        yield None, None
+        return
+    from app.terrain import TerrainHorizonService
+    from app.terrain.horizon import TerrainCoverageError
+    from app.terrain.raster import GeoTiffTerrainSource
+
+    repository = get_repository()
+    dataset = repository.terrain_dataset(normalized.get("terrain_dataset_id"))
+    if dataset is None or dataset["processing_version"] != normalized.get("processing_version"):
+        raise APIProblem(
+            422,
+            "TERRAIN_UNAVAILABLE",
+            "The terrain dataset selected for this job is unavailable.",
+            [{"field": "horizon_mode", "reason": "no_data"}],
+        )
+    try:
+        source = GeoTiffTerrainSource(
+            Path(dataset["asset_path"]),
+            dataset_id=dataset["id"],
+            model_version=dataset["processing_version"],
+            source_url=dataset["source_url"],
+            source_frame="MOON_ME / JPL DE421",
+            reference_radius_m=1_737_400.0,
+        )
+        service = TerrainHorizonService(
+            source,
+            latitude=normalized["site"]["latitude"],
+            longitude=normalized["site"]["longitude"],
+            observer_height_m=normalized["observer_height_m"],
+        )
+    except TerrainCoverageError as exc:
+        if "source" in locals():
+            source.close()
+        raise APIProblem(
+            422,
+            "TERRAIN_UNAVAILABLE",
+            "Terrain data is unavailable for the requested location.",
+            [{"field": "site", "reason": exc.reason}],
+        ) from exc
+    except (OSError, ValueError) as exc:
+        if "source" in locals():
+            source.close()
+        raise APIProblem(
+            503, "TERRAIN_DATA_UNAVAILABLE", "Prepared terrain data could not be read"
+        ) from exc
+    try:
+        yield service, dataset
+    finally:
+        source.close()
+
+
+def execute_observation(normalized, provider=None):
     settings = get_settings()
-    point = calculate_geometric_observation(
-        latitude=normalized["site"]["latitude"],
-        longitude=normalized["site"]["longitude"],
-        target_time=normalized["target_time"],
-        observer_height_m=normalized["observer_height_m"],
-        visibility_margin_deg=normalized["visibility_margin_deg"],
-        provider=HorizonsProvider(timeout=settings.horizons_timeout_seconds, max_retries=1),
-    )
+    with terrain_service_for(normalized) as (terrain_service, terrain_dataset):
+        point = calculate_observation(
+            latitude=normalized["site"]["latitude"],
+            longitude=normalized["site"]["longitude"],
+            target_time=normalized["target_time"],
+            horizon_mode=normalized["horizon_mode"],
+            terrain_service=terrain_service,
+            observer_height_m=normalized["observer_height_m"],
+            visibility_margin_deg=normalized["visibility_margin_deg"],
+            provider=provider
+            or HorizonsProvider(timeout=settings.horizons_timeout_seconds, max_retries=1),
+        )
     if canonical_time(point.timestamp) != normalized["target_time"]:
         raise APIProblem(
             502, "PROVIDER_TIME_MISMATCH", "Astronomy service changed the requested time"
         )
     if not point.sources:
         raise APIProblem(502, "PROVIDER_ERROR", "Astronomy service returned no provenance")
+    sources = [s.to_contract_source() for s in point.sources]
+    if terrain_dataset:
+        sources.append(
+            {
+                "name": terrain_dataset["attribution"],
+                "url": terrain_dataset["source_url"],
+                "version": terrain_dataset["product_version"],
+                "fetched_at": iso(terrain_dataset["retrieved_at"]),
+            }
+        )
     return {
         "site": normalized["site"],
         "point": point.model_dump(),
         "meta": {
-            "model_version": MODEL_VERSION,
+            "model_version": normalized["model_version"],
             "generated_at": iso(utcnow()),
             "data_status": "fresh",
-            "horizon_mode": "geometric",
+            "horizon_mode": normalized["horizon_mode"],
             "time_resolution_minutes": None,
-            "terrain_dataset_id": None,
-            "sources": [s.to_contract_source() for s in point.sources],
+            "terrain_dataset_id": normalized.get("terrain_dataset_id"),
+            "sources": sources,
         },
     }
+
+
+def execute_timeline(normalized, provider=None):
+    settings = get_settings()
+    with terrain_service_for(normalized) as (terrain_service, terrain_dataset):
+        timeline = calculate_timeline(
+            latitude=normalized["site"]["latitude"],
+            longitude=normalized["site"]["longitude"],
+            start_time=normalized["start_time"],
+            duration_days=normalized["duration_days"],
+            step_minutes=normalized["step_minutes"],
+            horizon_mode=normalized["horizon_mode"],
+            terrain_service=terrain_service,
+            observer_height_m=normalized["observer_height_m"],
+            visibility_margin_deg=normalized["visibility_margin_deg"],
+            provider=provider
+            or HorizonsProvider(timeout=settings.horizons_timeout_seconds, max_retries=1),
+        )
+    if (
+        canonical_time(timeline.start_time) != normalized["start_time"]
+        or canonical_time(timeline.end_time) != normalized["end_time"]
+        or timeline.step_minutes != normalized["step_minutes"]
+    ):
+        raise APIProblem(
+            502, "PROVIDER_TIME_MISMATCH", "Astronomy service changed the requested timeline"
+        )
+    if not timeline.sources:
+        raise APIProblem(502, "PROVIDER_ERROR", "Astronomy service returned no provenance")
+    sources = [source.to_contract_source() for source in timeline.sources]
+    if terrain_dataset:
+        sources.append(
+            {
+                "name": terrain_dataset["attribution"],
+                "url": terrain_dataset["source_url"],
+                "version": terrain_dataset["product_version"],
+                "fetched_at": iso(terrain_dataset["retrieved_at"]),
+            }
+        )
+    return {
+        **timeline.model_dump(mode="json"),
+        "site": normalized["site"],
+        "meta": {
+            "model_version": normalized["model_version"],
+            "generated_at": iso(utcnow()),
+            "data_status": "fresh",
+            "horizon_mode": normalized["horizon_mode"],
+            "time_resolution_minutes": normalized["step_minutes"],
+            "terrain_dataset_id": normalized.get("terrain_dataset_id"),
+            "sources": sources,
+        },
+    }
+
+
+def execute_comparison(normalized, provider=None, repository=None):
+    from app.comparison import ScenarioEvaluationInput, evaluate_comparison
+
+    settings = get_settings()
+    repository = repository or get_repository()
+    provider = provider or HorizonsProvider(
+        timeout=settings.horizons_timeout_seconds, max_retries=1
+    )
+    evaluations = []
+    sources = []
+    for scenario in normalized["scenarios"]:
+        cached = repository.cache_result(request_key(scenario))
+        if cached is not None:
+            timeline = deepcopy(cached)
+            timeline["site"] = scenario["site"]
+            timeline["meta"]["data_status"] = "cached"
+        else:
+            timeline = execute_timeline(scenario, provider=provider)
+        timeline = TimelineResult.model_validate(timeline).model_dump(mode="json")
+        evaluations.append(
+            ScenarioEvaluationInput.from_timeline(
+                label=scenario["label"],
+                timeline=timeline,
+                site=timeline["site"],
+            )
+        )
+        for raw_source in timeline["meta"]["sources"]:
+            source = Source.model_validate(raw_source)
+            if source not in sources:
+                sources.append(source)
+
+    result = evaluate_comparison(
+        evaluations,
+        meta=ComparisonMeta(
+            model_version=normalized["model_version"],
+            generated_at=utcnow(),
+            data_status="fresh",
+            horizon_mode=normalized["horizon_mode"],
+            time_resolution_minutes=normalized["step_minutes"],
+            terrain_dataset_id=normalized["terrain_dataset_id"],
+            sources=sources,
+        ),
+    )
+    return result.model_dump(mode="json")
+
+
+def validate_comparison_result(result, normalized):
+    scenarios = normalized["scenarios"]
+    by_label = {scenario["label"]: scenario for scenario in scenarios}
+    if set(by_label) != {scenario.label for scenario in result.ranked_scenarios}:
+        raise ValueError("Comparison service changed the requested scenario labels")
+    original_order = {scenario["label"]: index for index, scenario in enumerate(scenarios)}
+    expected_order = sorted(
+        result.ranked_scenarios,
+        key=lambda scenario: (
+            -scenario.score,
+            -scenario.summary.longest_golden_window_hours,
+            original_order[scenario.label],
+        ),
+    )
+    if result.ranked_scenarios != expected_order:
+        raise ValueError("Comparison service returned scenarios in an invalid ranking order")
+    if (
+        result.meta.horizon_mode != normalized["horizon_mode"]
+        or result.meta.time_resolution_minutes != normalized["step_minutes"]
+        or result.meta.model_version != normalized["model_version"]
+        or result.meta.terrain_dataset_id != normalized["terrain_dataset_id"]
+    ):
+        raise ValueError("Comparison service changed shared calculation metadata")
+    for scenario in result.ranked_scenarios:
+        expected = by_label[scenario.label]
+        expected_start = canonical_time(expected["start_time"])
+        expected_end = canonical_time(expected["end_time"])
+        if (
+            scenario.site.model_dump(mode="json") != expected["site"]
+            or canonical_time(scenario.start_time.isoformat()) != expected_start
+            or canonical_time(scenario.end_time.isoformat()) != expected_end
+            or scenario.provenance.model_version != expected["model_version"]
+            or scenario.provenance.terrain_dataset_id != expected.get("terrain_dataset_id")
+        ):
+            raise ValueError("Comparison service changed a scenario or its provenance")
+        if any(source not in result.meta.sources for source in scenario.provenance.sources):
+            raise ValueError("Comparison metadata omitted a scenario source")
+
+
+def execute_job(normalized):
+    kind = normalized.get("kind", "now")
+    if kind == "now":
+        return execute_observation(normalized)
+    if kind == "timeline":
+        return execute_timeline(normalized)
+    if kind == "comparison":
+        return execute_comparison(normalized)
+    raise APIProblem(500, "INTERNAL_ERROR", "Unknown calculation job kind")
 
 
 def calculation_error(exc):
     if isinstance(exc, APIProblem):
         return exc
+    from app.terrain.horizon import TerrainCoverageError
+
+    if isinstance(exc, TerrainCoverageError):
+        return APIProblem(
+            422,
+            "TERRAIN_UNAVAILABLE",
+            "Terrain data is unavailable for the requested location.",
+            [{"field": "site", "reason": exc.reason}],
+        )
     if isinstance(exc, HorizonsTransportError) or (
         isinstance(exc, HorizonsHttpError) and exc.status_code in (429, 503, 504)
     ):
@@ -69,7 +296,7 @@ def calculation_error(exc):
 
 def _child(normalized, sender):
     try:
-        sender.send((execute_observation(normalized), None))
+        sender.send((execute_job(normalized), None))
     except Exception as exc:
         problem = calculation_error(exc)
         sender.send((None, (problem.status, problem.code, problem.message, problem.details)))
@@ -120,11 +347,20 @@ def run_once(repository, executor=isolated_execution):
             result = repository.cache_result(job["cache_key"])
             if result is not None:
                 result = deepcopy(result)
-                result["site"] = job["normalized"]["site"]
+                if job["kind"] != "comparison":
+                    result["site"] = job["normalized"]["site"]
                 result["meta"]["data_status"] = "cached"
             else:
                 result = executor(job["normalized"])
-            result = NowResult.model_validate(result).model_dump(mode="json")
+            result_model = {
+                "now": NowResult,
+                "timeline": TimelineResult,
+                "comparison": ComparisonResult,
+            }[job["kind"]]
+            validated_result = result_model.model_validate(result)
+            if job["kind"] == "comparison":
+                validate_comparison_result(validated_result, job["normalized"])
+            result = validated_result.model_dump(mode="json")
             repository.finish(
                 job,
                 result=result,
@@ -141,7 +377,7 @@ def run_once(repository, executor=isolated_execution):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Durable single-observation PostgreSQL worker")
+    parser = argparse.ArgumentParser(description="Durable ephemeris PostgreSQL worker")
     parser.add_argument("--once", action="store_true", help="Process at most one job, then exit")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
