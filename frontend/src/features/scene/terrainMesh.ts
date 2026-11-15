@@ -16,6 +16,38 @@ export interface TerrainMeshOptions {
   scale?: number
 }
 
+export function getTerrainCameraFrame(
+  geometry: THREE.BufferGeometry,
+  fieldOfViewDeg: number,
+  aspect: number,
+): { center: THREE.Vector3; direction: THREE.Vector3; distance: number } {
+  geometry.computeBoundingBox()
+  const bounds = geometry.boundingBox!
+  const center = bounds.getCenter(new THREE.Vector3())
+  const direction = new THREE.Vector3(8, 7, 12).normalize()
+  const right = direction.clone().cross(new THREE.Vector3(0, 1, 0)).normalize()
+  const up = right.clone().cross(direction).normalize()
+  const verticalTangent = Math.tan(THREE.MathUtils.degToRad(fieldOfViewDeg) / 2)
+  const horizontalTangent = verticalTangent * aspect
+  let distance = 0
+
+  for (const x of [bounds.min.x, bounds.max.x]) {
+    for (const y of [bounds.min.y, bounds.max.y]) {
+      for (const z of [bounds.min.z, bounds.max.z]) {
+        const offset = new THREE.Vector3(x, y, z).sub(center)
+        const depth = offset.dot(direction)
+        distance = Math.max(
+          distance,
+          depth + Math.abs(offset.dot(right)) / horizontalTangent,
+          depth + Math.abs(offset.dot(up)) / verticalTangent,
+        )
+      }
+    }
+  }
+
+  return { center, direction, distance: distance * 1.08 }
+}
+
 /**
  * Validates a numerical heightmap against canonical API contract invariants:
  * - frame === 'local_enu'
@@ -165,15 +197,15 @@ export function buildTerrainGeometry(
       const i10 = (r + 1) * width + c
       const i11 = (r + 1) * width + (c + 1)
 
-      // Triangle 1: i00, i10, i01 (facing +Y upwards)
+      // Scene north is -Z, so east × north must use this winding to face +Y.
       indices[idx++] = i00
-      indices[idx++] = i10
       indices[idx++] = i01
+      indices[idx++] = i10
 
-      // Triangle 2: i01, i10, i11 (facing +Y upwards)
+      // Triangle 2 uses the same upward-facing winding.
       indices[idx++] = i01
-      indices[idx++] = i10
       indices[idx++] = i11
+      indices[idx++] = i10
     }
   }
 

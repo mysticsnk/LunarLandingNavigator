@@ -9,6 +9,7 @@ import {
   normalizeLongitude,
   type LunarCoordinate,
 } from '../../lib/coordinates'
+import { buildMoonGraticuleGeometry } from './moonGraticule'
 import { SceneErrorBoundary } from './SceneErrorBoundary'
 import type { GlobalMoonSceneProps } from './types'
 import type { Site, ResolvedSite } from '../../api/types'
@@ -21,6 +22,16 @@ const DEFAULT_CAMERA_POS: [number, number, number] = [4.3, 2.7, 7.2]
 const SOUTH_POLE_CAMERA_POS: [number, number, number] = [0.1, -6.5, 2.0]
 const NEAR_SIDE_CAMERA_POS: [number, number, number] = [7.0, 0.5, 0.0]
 const FAR_SIDE_CAMERA_POS: [number, number, number] = [-7.0, 0.5, 0.0]
+
+const MoonGraticule: React.FC = () => {
+  const geometry = useMemo(() => buildMoonGraticuleGeometry(MOON_RADIUS * 1.002), [])
+
+  return (
+    <lineSegments geometry={geometry} renderOrder={1}>
+      <lineBasicMaterial color="#43c8d5" transparent opacity={0.34} depthWrite={false} />
+    </lineSegments>
+  )
+}
 
 
 /**
@@ -337,14 +348,15 @@ const GlobalSceneContent: React.FC<SceneContentProps> = ({
         data-testid="global-moon-sphere"
         onClick={handleGlobeClick}
       >
-        <sphereGeometry args={[MOON_RADIUS, 64, 64]} />
+        <sphereGeometry args={[MOON_RADIUS, 128, 96]} />
         <meshStandardMaterial
-          color="#9da0a8"
+          color="#ffffff"
           map={moonTexture}
-          roughness={0.88}
-          metalness={0.03}
+          roughness={0.96}
+          metalness={0}
         />
       </mesh>
+      <MoonGraticule />
 
       {/* Selected location marker highlight */}
       <mesh position={sitePos}>
@@ -617,6 +629,7 @@ export const GlobalMoonScene: React.FC<GlobalMoonSceneProps> = ({
           >
             <Canvas
               camera={{ position: DEFAULT_CAMERA_POS, fov: 40, near: 0.1, far: 80 }}
+              shadows
               style={{ width: '100%', height: '100%' }}
               data-testid="global-moon-canvas"
             >
