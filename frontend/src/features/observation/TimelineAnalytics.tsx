@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { TimelineResult, TimelineWindow } from '../../api/types'
 import { useTimelinePlayback } from './useTimelinePlayback'
 
@@ -65,6 +66,7 @@ export function TimelineAnalytics({
   result: TimelineResult
   playback: Playback
 }) {
+  const [activePanel, setActivePanel] = useState<'timeline' | 'elevation' | 'windows'>('timeline')
   const points = result.points
   if (points.length === 0)
     return (
@@ -139,6 +141,13 @@ export function TimelineAnalytics({
         </dl>
       </details>
 
+      <div className="timeline-tabs" role="tablist" aria-label="Timeline panels">
+        {([['timeline', 'Timeline'], ['elevation', 'Elevation plot'], ['windows', 'Golden windows']] as const).map(([id, label]) => (
+          <button key={id} type="button" role="tab" aria-selected={activePanel === id} onClick={() => setActivePanel(id)}>{label}</button>
+        ))}
+      </div>
+
+      {activePanel === 'elevation' && <div role="tabpanel" aria-label="Elevation plot">
       <div className="timeline-chart-legend" aria-label="Chart legend">
         <span><i className="sun-line" /> Sun elevation</span>
         <span><i className="earth-line" /> Earth elevation</span>
@@ -197,7 +206,9 @@ export function TimelineAnalytics({
           )
         })}
       </svg>
+      </div>}
 
+      {activePanel === 'timeline' && <div role="tabpanel" aria-label="Timeline">
       <div className="timeline-playback" aria-label="Timeline sample navigation">
         <button type="button" className="secondary-button" onClick={playback.previous} disabled={currentIndex === 0}>
           Previous sample
@@ -266,12 +277,15 @@ export function TimelineAnalytics({
         <dt>Next observed sunset</dt><dd>{result.summary.next_sunset_at ?? 'No set event observed in this computed period.'}</dd>
         <dt>Next observed Earthset</dt><dd>{result.summary.next_earthset_at ?? 'No set event observed in this computed period.'}</dd>
       </dl>
+      </div>}
+      {activePanel === 'windows' && <div role="tabpanel" aria-label="Golden windows">
       <div className="timeline-window-groups">
         <WindowList label="Sunlight intervals" windows={result.sunlight_windows} result={result} />
         <WindowList label="Earth visibility intervals" windows={result.earth_visibility_windows} result={result} />
         <WindowList label="Golden windows" windows={result.golden_windows} result={result} />
       </div>
       <p className="field-help">Set events are observed sample transitions. A period-clipped interval does not establish a physical sunset or Earthset.</p>
+      </div>}
     </section>
   )
 }

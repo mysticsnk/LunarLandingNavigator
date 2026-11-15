@@ -21,7 +21,6 @@ export function App() {
           <h1 className="app-title" data-testid="app-title">
             LUNAR NAVIGATOR <span>/ WORKSTATION</span>
           </h1>
-          <span className="stage-badge">Stage 6</span>
         </div>
         <button className="header-compare" type="button" onClick={openComparison}>Compare sites</button>
         {isDemoModeEnabled() && (
@@ -39,6 +38,7 @@ export function App() {
         <SourceLink url="https://svs.gsfc.nasa.gov/4720/">Moon texture: NASA SVS / LROC WAC and LDAM</SourceLink>
         <details className="csa-source-details"><summary>CSA resources</summary><CSAResources /></details>
         <span className="footer-contract">API v1 · UTC · Backend calculations</span>
+        <span className="ai-disclosure">AI-assisted development: Codex · Antigravity</span>
       </footer>
     </div>
   )

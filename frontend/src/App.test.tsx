@@ -125,8 +125,7 @@ describe('Lunar Navigator workstation', () => {
   it('starts with unknown operational values and no fabricated directions', async () => {
     const { container } = render(<App />)
     expect(screen.getByTestId('app-title')).toHaveTextContent('LUNAR NAVIGATOR / WORKSTATION')
-    expect(screen.getByText('Stage 6')).toBeInTheDocument()
-    expect(screen.queryByText('Stage 5')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Stage [0-9]/)).not.toBeInTheDocument()
     expect(screen.getByText(/Sun visibility: Unknown/)).toBeInTheDocument()
     expect(screen.getByText('Simultaneous availability: Unknown')).toBeInTheDocument()
     expect(visual.scene.mock.lastCall![0]).toMatchObject({
@@ -151,6 +150,20 @@ describe('Lunar Navigator workstation', () => {
       'href',
       'https://svs.gsfc.nasa.gov/4720/',
     )
+  })
+  it('offers a catalog site with registered terrain without changing geometric calculation mode', async () => {
+    const supportedSite = {
+      ...catalog.items[0],
+      id: 'registered-terrain-site',
+      name: 'Registered terrain site',
+      terrain_region_id: 'registered-region',
+    }
+    vi.mocked(apiClient.getSites).mockResolvedValue({ ...catalog, items: [...catalog.items, supportedSite], total: 2 })
+    render(<App />)
+    const preview = await screen.findByRole('button', { name: 'Preview Registered terrain site' })
+    fireEvent.click(preview)
+    await waitFor(() => expect(vi.mocked(useHeightmap)).toHaveBeenLastCalledWith('registered-region'))
+    expect(screen.getByRole('button', { name: 'Geometric' })).toHaveAttribute('aria-pressed', 'true')
   })
   it('submits a catalog ID with an explicit UTC timestamp and source links', async () => {
     render(<App />)
@@ -213,8 +226,10 @@ describe('Lunar Navigator workstation', () => {
     const provenance = screen.getByText('Result provenance').parentElement!
     expect(within(provenance).getByText('development-fixture-v1')).toBeInTheDocument()
     expect(within(provenance).getByText('2027-07-15T00:00:00Z')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Golden windows' }))
     expect(screen.getAllByText(/Window 1/)).toHaveLength(3)
     expect(screen.getByText('Continues through period end (clipped)')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Timeline' }))
     expect(screen.getAllByText(/No set event observed in this computed period\./)).toHaveLength(2)
     fireEvent.click(screen.getByRole('button', { name: 'Next sample' }))
     expect(screen.getByText('2027-07-15T06:00:00Z (UTC)')).toBeInTheDocument()
@@ -382,6 +397,7 @@ describe('Lunar Navigator workstation', () => {
     const inspector = screen.getByRole('region', { name: 'Site inspector' })
     expect(within(inspector).getByText('Synthetic development site')).toBeInTheDocument()
     expect(within(inspector).getByText(/-89.44° latitude, -137.9° east longitude/)).toBeInTheDocument()
+    fireEvent.click(within(section).getByText('Observation values and provenance'))
     expect(
       within(section).getByText('2027-07-15T00:00:00Z (UTC)'),
     ).toBeInTheDocument()
