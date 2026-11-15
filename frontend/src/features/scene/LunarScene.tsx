@@ -240,6 +240,9 @@ export const LunarScene: React.FC<LunarSceneProps> = (props) => {
     earthDirectionEnu,
     observationPoint,
     observerHeightM = 2,
+    horizonMode = 'geometric',
+    terrainDatasetId,
+    visibilityMarginDeg,
     isLoading = false,
     dataStatus,
     timestamp,
@@ -434,9 +437,9 @@ export const LunarScene: React.FC<LunarSceneProps> = (props) => {
         }}
       >
         <span>
-          Geometric Reference Horizon (Elevation 0.0°) · Local ENU scene
+          {horizonMode === 'terrain' ? 'Terrain-aware result' : 'Geometric Reference Horizon (Elevation 0.0°)'} · Local ENU scene
         </span>
-        <span>Terrain occlusion not modeled in Stage 1</span>
+        <span>{horizonMode === 'terrain' ? `Dataset ${terrainDatasetId ?? 'not reported'} · margin ${visibilityMarginDeg ?? 0}° · rendering may be simplified` : `Terrain occlusion not modeled · margin ${visibilityMarginDeg ?? 0}°`}</span>
       </div>
 
       {/* Loading Overlay */}

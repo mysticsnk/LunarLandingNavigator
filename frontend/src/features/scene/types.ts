@@ -33,6 +33,9 @@ export interface LunarSceneProps {
    * Default: 2.0 metres.
    */
   observerHeightM?: number
+  horizonMode?: 'geometric' | 'terrain'
+  terrainDatasetId?: string | null
+  visibilityMarginDeg?: number
   /**
    * Whether ephemeris or terrain data is currently loading.
    */

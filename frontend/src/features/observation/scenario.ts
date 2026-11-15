@@ -9,6 +9,7 @@ export interface ScenarioDraft {
   utcTime: string
   height: string
   margin: string
+  horizonMode: 'geometric' | 'terrain'
 }
 
 export function initialScenario(): ScenarioDraft {
@@ -21,6 +22,7 @@ export function initialScenario(): ScenarioDraft {
     utcTime: new Date().toISOString().slice(0, 19),
     height: '2',
     margin: '0',
+    horizonMode: 'geometric',
   }
 }
 
@@ -89,7 +91,7 @@ export function buildRequest(draft: ScenarioDraft): NowRequest {
   return {
     site,
     target_time,
-    horizon_mode: 'geometric',
+    horizon_mode: draft.horizonMode,
     observer_height_m,
     visibility_margin_deg,
   }

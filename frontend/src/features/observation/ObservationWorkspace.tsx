@@ -1,7 +1,7 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { apiClient } from '../../api/client'
 import { ApiClientError } from '../../api/errors'
-import type { Site, SiteList, LayerList } from '../../api/types'
+import type { Site, SiteList, LayerList, TerrainCoverage } from '../../api/types'
 import { SourceLink } from '../../components/SourceLink'
 import { RequestError } from '../../components/RequestError'
 import { LunarMap } from '../map'
@@ -31,7 +31,27 @@ export function ObservationWorkspace() {
   const [catalogError, setCatalogError] = useState<ApiClientError | null>(null)
   const [attempt, setAttempt] = useState(0)
   const [validation, setValidation] = useState<string | null>(null)
+  const [coverage, setCoverage] = useState<TerrainCoverage | null>(null)
+  const [coverageState, setCoverageState] = useState<'idle' | 'checking' | 'supported' | 'unsupported' | 'error'>('idle')
   const observation = useObservation()
+
+  const coverageCoordinate = useMemo(() => draft.mode === 'catalog' && draft.site
+    ? { latitude: draft.site.latitude, longitude: draft.site.longitude }
+    : draft.mode === 'custom' && draft.latitude.trim() && draft.longitude.trim() &&
+        Number.isFinite(Number(draft.latitude)) && Number.isFinite(Number(draft.longitude)) &&
+        Number(draft.latitude) >= -90 && Number(draft.latitude) <= 90 && Number(draft.longitude) >= -180 && Number(draft.longitude) < 360
+      ? { latitude: Number(draft.latitude), longitude: Number(draft.longitude) }
+      : null, [draft.mode, draft.site, draft.latitude, draft.longitude])
+  useEffect(() => {
+    if (draft.horizonMode !== 'terrain' || !coverageCoordinate) {
+      return
+    }
+    const controller = new AbortController()
+    apiClient.getTerrainCoverage(coverageCoordinate.latitude, coverageCoordinate.longitude, { signal: controller.signal })
+      .then((value) => { if (!controller.signal.aborted) { setCoverage(value); setCoverageState(value.available ? 'supported' : 'unsupported') } })
+      .catch(() => { if (!controller.signal.aborted) { setCoverage(null); setCoverageState('error') } })
+    return () => controller.abort()
+  }, [draft.horizonMode, coverageCoordinate])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -88,14 +108,24 @@ export function ObservationWorkspace() {
   function change(patch: Partial<ScenarioDraft>) {
     observation.reset()
     setValidation(null)
-    setDraft((previous) => ({ ...previous, ...patch }))
+    const next = { ...draft, ...patch }
+    const validLocation = next.mode === 'catalog' ? next.site !== null :
+      next.latitude.trim() !== '' && next.longitude.trim() !== '' &&
+      Number.isFinite(Number(next.latitude)) && Number.isFinite(Number(next.longitude)) &&
+      Number(next.latitude) >= -90 && Number(next.latitude) <= 90 && Number(next.longitude) >= -180 && Number(next.longitude) < 360
+    setCoverageState(next.horizonMode === 'terrain' && validLocation ? 'checking' : 'idle')
+    setDraft(next)
   }
   function submit(event: FormEvent) {
     event.preventDefault()
+    if (draft.horizonMode === 'terrain' && coverageState !== 'supported') {
+      setValidation(coverageState === 'checking' ? 'Terrain coverage is still being checked.' : coverageState === 'unsupported' ? 'Terrain is unavailable at this location. Choose geometric mode explicitly to continue.' : coverageState === 'error' ? 'Terrain coverage check failed. Retry the check before requesting terrain mode.' : 'Select a valid location to check terrain coverage.')
+      return
+    }
     try {
       const request = buildRequest(draft)
       setValidation(null)
-      void observation.submit(request)
+      void observation.submit(request, coverage)
     } catch (error) {
       observation.reset()
       setValidation((error as Error).message)
@@ -127,7 +157,7 @@ export function ObservationWorkspace() {
         <p className="eyebrow">SINGLE-TIME OBSERVATION</p>
         <h2>Explore a lunar vantage point</h2>
         <p className="muted">
-          Choose a location and a UTC instant to inspect geometric Sun and Earth
+          Choose a location and a UTC instant to inspect Sun and Earth
           visibility.
         </p>
       </div>
@@ -369,10 +399,18 @@ export function ObservationWorkspace() {
                     />
                   </label>
                 </div>
-                <p className="field-help">
-                  Geometric horizon · terrain occlusion is unavailable in Stage
-                  1.
-                </p>
+                <label className="field">Horizon mode
+                  <select aria-label="Horizon mode" value={draft.horizonMode} onChange={(event) => change({ horizonMode: event.target.value as ScenarioDraft['horizonMode'] })}>
+                    <option value="geometric">Geometric</option><option value="terrain">Terrain-aware</option>
+                  </select>
+                </label>
+                {draft.horizonMode === 'terrain' && <p role={coverageState === 'error' || coverageState === 'unsupported' ? 'alert' : 'status'} className="field-help">
+                  {coverageState === 'checking' && 'Checking terrain coverage…'}
+                  {coverageState === 'supported' && `Terrain supported${coverage?.dataset_id ? ` · ${coverage.dataset_id}` : ''}${coverage?.resolution_m != null ? ` · ${coverage.resolution_m} m` : ''}`}
+                  {coverageState === 'unsupported' && `Terrain unavailable${coverage?.reason ? `: ${coverage.reason}` : ''}. Choose geometric mode explicitly to continue.`}
+                  {coverageState === 'error' && 'Terrain coverage check failed. Retry by changing the location or mode.'}
+                  {coverageState === 'idle' && 'Select a valid location to check terrain coverage.'}
+                </p>}
               </fieldset>
               {validation && (
                 <p role="alert" className="request-error">
@@ -491,6 +529,9 @@ export function ObservationWorkspace() {
                   sunDirectionEnu={result?.point.sun.direction_enu ?? null}
                   earthDirectionEnu={result?.point.earth.direction_enu ?? null}
                   observerHeightM={result?.site.observer_height_m}
+                  horizonMode={result?.meta.horizon_mode}
+                  terrainDatasetId={result?.meta.terrain_dataset_id}
+                  visibilityMarginDeg={observation.resultRequest?.visibility_margin_deg}
                   isLoading={observation.busy}
                 />
               </div>
@@ -499,7 +540,8 @@ export function ObservationWorkspace() {
               </p>
             </section>
           </div>
-          <ObservationResult result={result} />
+          {result && observation.resultRequest && <p className="muted">Displayed result uses {observation.resultRequest.horizon_mode} mode and its submitted scenario settings{observation.busy ? '; a new calculation is running' : ''}. Form edits do not change this result.</p>}
+          <ObservationResult result={result} request={observation.resultRequest} coverage={observation.resultCoverage} />
           <CSAResources />
         </div>
       </div>
