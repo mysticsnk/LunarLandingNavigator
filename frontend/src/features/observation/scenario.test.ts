@@ -1,8 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { buildRequest, buildTimelineRequest, initialScenario, serializeUtc } from './scenario'
+import { buildComparisonRequest, buildRequest, buildTimelineRequest, initialScenario, serializeUtc } from './scenario'
 import { catalog } from '../../test/fixtures'
 
 describe('UTC scenario validation', () => {
+  it('allows the same catalog site on different dates with common parameters', () => {
+    const scenarios = [
+      { label: 'July', mode: 'catalog' as const, site: catalog.items[0], name: '', latitude: '', longitude: '', utcTime: '2027-07-15T00:00' },
+      { label: 'August', mode: 'catalog' as const, site: catalog.items[0], name: '', latitude: '', longitude: '', utcTime: '2027-08-15T00:00' },
+    ]
+    expect(buildComparisonRequest(scenarios, { ...initialScenario(), site: catalog.items[0], durationDays: '14', stepMinutes: '120' })).toMatchObject({
+      scenarios: [
+        { label: 'July', site: { site_id: 'development-site' }, start_time: '2027-07-15T00:00:00Z' },
+        { label: 'August', site: { site_id: 'development-site' }, start_time: '2027-08-15T00:00:00Z' },
+      ], duration_days: 14, step_minutes: 120,
+    })
+  })
   it('serializes UTC explicitly without a browser-local conversion', () => {
     expect(serializeUtc('2027-07-15T12:34')).toBe('2027-07-15T12:34:00Z')
     expect(serializeUtc('2027-07-15T12:34:56')).toBe('2027-07-15T12:34:56Z')
