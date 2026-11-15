@@ -21,6 +21,7 @@ from sqlalchemy.pool import NullPool
 from test_stage1_jobs import REQUEST, check_schema, controlled
 
 from app.astronomy import HorizonsProvider
+from app.astronomy.horizons import HorizonsTransportError
 from app.core.config import get_settings
 from app.core.database import get_engine
 from app.main import create_app
@@ -498,7 +499,7 @@ def test_timeline_lifecycle_cache_and_failures_with_postgresql(pg_client, pg_rep
     assert pg_client.get(distinct.json()["result_url"]).status_code == 409
 
 
-def test_comparison_job_lifecycle_and_cache_with_postgresql(pg_client, pg_repo):
+def test_comparison_job_lifecycle_and_cache_with_postgresql(pg_client, pg_repo, monkeypatch):
     root = Path(__file__).resolve().parents[2]
     request = json.loads(
         (root / "contracts/examples/comparison-request.json").read_text(encoding="utf-8")
@@ -535,10 +536,19 @@ def test_comparison_job_lifecycle_and_cache_with_postgresql(pg_client, pg_repo):
     }
     failed = pg_client.post("/api/v1/ephemeris/compare", json=unavailable)
     assert failed.status_code == 202
+
+    class FailingComparisonProvider:
+        def __init__(self, **kwargs):
+            pass
+
+        def query_body_series(self, **kwargs):
+            raise HorizonsTransportError("Controlled PostgreSQL integration failure")
+
+    monkeypatch.setattr("app.worker.HorizonsProvider", FailingComparisonProvider)
     assert run_once(pg_repo, executor=execute_job)
     failed_status = pg_client.get(failed.json()["status_url"]).json()
     assert failed_status["status"] == "failed"
-    assert failed_status["error"]["code"] == "COMPARISON_UNAVAILABLE"
+    assert failed_status["error"]["code"] == "ASTRONOMY_UNAVAILABLE"
     assert pg_client.get(failed.json()["result_url"]).status_code == 409
 
 

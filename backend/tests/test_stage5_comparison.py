@@ -3,11 +3,12 @@ from copy import deepcopy
 import pytest
 from test_contract import fixture
 from test_stage1_jobs import check_schema
+from test_stage3_timeline import ControlledSeriesProvider
 
-from app.core.problems import APIProblem
+from app.astronomy.horizons import HorizonsTransportError
 from app.requests import ComparisonRequest
 from app.storage import request_key
-from app.worker import execute_job, run_once
+from app.worker import execute_comparison, run_once
 
 ROOT_REQUEST = fixture("comparison-request.json")
 
@@ -175,7 +176,13 @@ def test_comparison_job_lifecycle_and_cache_hit(stage_client, stage_repo):
     ]
     assert [scenario["site"]["site_id"] for scenario in normalized["scenarios"]] == [None, None]
 
-    fixture_result = fixture("comparison-result.json")
+    fixture_result = deepcopy(fixture("comparison-result.json"))
+    for scenario in fixture_result["ranked_scenarios"]:
+        scenario["provenance"]["model_version"] = next(
+            item["model_version"]
+            for item in normalized["scenarios"]
+            if item["label"] == scenario["label"]
+        )
     assert run_once(stage_repo, executor=lambda _: fixture_result)
     status = stage_client.get(accepted.json()["status_url"]).json()
     assert status["status"] == "succeeded", status
@@ -205,19 +212,50 @@ def test_comparison_submission_resolves_catalog_and_custom_sites(stage_client, s
     ]
 
 
-def test_comparison_worker_fails_explicitly_without_service():
-    with pytest.raises(APIProblem, match="Comparison calculation service is not integrated"):
-        execute_job({"kind": "comparison"})
+def test_comparison_worker_uses_timeline_and_ranking_services(stage_repo):
+    normalized = stage_repo.resolve(ComparisonRequest.model_validate(ROOT_REQUEST))
+    result = execute_comparison(
+        normalized,
+        provider=ControlledSeriesProvider(),
+        repository=stage_repo,
+    )
+
+    check_schema("ComparisonResult", result)
+    assert [scenario["rank"] for scenario in result["ranked_scenarios"]] == [1, 2]
+    assert result["meta"]["model_version"] == "comparison-v1"
+    assert all(
+        item["provenance"]["model_version"] == "geometric-timeline-v1"
+        and item["provenance"]["terrain_dataset_id"] is None
+        for item in result["ranked_scenarios"]
+    )
 
 
-def test_comparison_job_stores_structured_failure_without_service(stage_client, stage_repo):
+def test_comparison_job_fails_atomically_when_one_scenario_provider_fails(stage_client, stage_repo):
     accepted = stage_client.post("/api/v1/ephemeris/compare", json=ROOT_REQUEST)
     assert accepted.status_code == 202
-    assert run_once(stage_repo, executor=execute_job)
+
+    class FailingSecondScenarioProvider:
+        def __init__(self):
+            self.controlled = ControlledSeriesProvider()
+
+        def query_body_series(self, *, latitude, **kwargs):
+            if latitude == -87.45:
+                raise HorizonsTransportError("Controlled test provider failure")
+            return self.controlled.query_body_series(latitude=latitude, **kwargs)
+
+    provider = FailingSecondScenarioProvider()
+    assert run_once(
+        stage_repo,
+        executor=lambda normalized: execute_comparison(
+            normalized,
+            provider=provider,
+            repository=stage_repo,
+        ),
+    )
 
     status = stage_client.get(accepted.json()["status_url"]).json()
     assert status["status"] == "failed"
-    assert status["error"]["code"] == "COMPARISON_UNAVAILABLE"
+    assert status["error"]["code"] == "ASTRONOMY_UNAVAILABLE"
     failure = stage_client.get(accepted.json()["result_url"])
     assert failure.status_code == 409
     assert failure.json()["error"]["code"] == "JOB_FAILED"

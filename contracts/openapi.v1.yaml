@@ -1494,7 +1494,7 @@ paths:
     post:
       operationId: submitComparisonRequest
       summary: submitComparisonRequest
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters: []
       responses:
         '400':

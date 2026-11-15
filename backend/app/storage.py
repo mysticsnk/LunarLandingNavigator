@@ -324,7 +324,6 @@ class Repository:
                         ],
                     ) from exc
                 raise
-            normalized.pop("kind")
             normalized["label"] = scenario.label
             scenarios.append(normalized)
         dataset_ids = {scenario.get("terrain_dataset_id") for scenario in scenarios}

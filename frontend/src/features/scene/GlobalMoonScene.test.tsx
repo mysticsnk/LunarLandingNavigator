@@ -238,10 +238,16 @@ describe('Stage 5 GlobalMoonScene Component', () => {
       )
     })
 
-    it('does not render active link when ephemeris is unknown or loading', () => {
+    it('hides a stale active link while a replacement ephemeris is loading', () => {
+      const previousPoint: ObservationPoint = {
+        timestamp: '2026-11-15T12:00:00Z',
+        sun: { azimuth_deg: 180, elevation_deg: 2, horizon_elevation_deg: 0, visible: true, direction_enu: azimuthElevationToEnu(180, 2) },
+        earth: { azimuth_deg: 10, elevation_deg: 4.5, horizon_elevation_deg: 0, visible: true, direction_enu: azimuthElevationToEnu(10, 4.5) },
+        is_golden_window: true,
+      }
       render(
         <GlobalMoonScene
-          observationPoint={null}
+          observationPoint={previousPoint}
           isLoading={true}
           selectedSite={mockSites[0]}
         />,

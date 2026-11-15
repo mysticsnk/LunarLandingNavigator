@@ -17,23 +17,17 @@
   model, dataset, and sources.
 - Added a durable job-kind migration. Existing claims, lease fencing, recovery,
   atomic result publication, result retention, and cache storage are reused.
-- Added a worker placeholder that records `COMPARISON_UNAVAILABLE` as a
-  structured failed-job error. It does not invent successful results.
+- Integrated the comparison service with sequential timeline evaluation,
+  existing per-timeline caching, exact scenario provenance, and atomic job
+  result publication. Any failed scenario fails the comparison job.
 
-## Calculation service integration blocker
+## Calculation service
 
-The agreed comparison/timeline ranking service is not present in this checkout
-or in the locally available `origin/Denis` branch. The comparison route and job
-infrastructure are ready, but the worker deliberately fails comparison jobs
-until that service is integrated. Replace the explicit worker placeholder with
-the service-owned sequential scenario evaluation and v1 ranking call before
-calling Stage 5 complete. Do not enable successful comparison execution by
-adding a second score or timeline implementation here.
-
-The planned service must receive the frozen normalized scenario contexts, use
-each scenario's pinned terrain dataset/model version, evaluate scenarios with
-bounded provider concurrency, and return the agreed ranked result with actual
-provenance. A failure in any scenario must fail the entire comparison job.
+The service in `app.astronomy.comparison` owns the v1 scoring formula and
+ordering. The worker evaluates scenarios one at a time using the existing
+timeline implementation and provider lock, then passes validated timeline
+summaries and provenance to that service. A failure in any scenario fails the
+whole job; partial rankings are not published.
 
 ## Contract provenance extension
 
@@ -61,23 +55,29 @@ Commands run:
 
 ```powershell
 cd backend
-.\.venv\Scripts\ruff.exe check app\requests.py app\results.py app\storage.py app\routes.py app\worker.py migrations\versions\0004_stage5_comparison_jobs.py tests\test_contract.py tests\test_stage5_comparison.py
-.\.venv\Scripts\ruff.exe format --check app\requests.py app\results.py app\storage.py app\routes.py app\worker.py migrations\versions\0004_stage5_comparison_jobs.py tests\test_contract.py tests\test_stage5_comparison.py
-.\.venv\Scripts\pytest.exe tests\test_stage5_comparison.py -q
+.\.venv\Scripts\ruff.exe check .
+.\.venv\Scripts\ruff.exe format --check .
+.\.venv\Scripts\pytest.exe -q
 ```
 
-Recorded results: full Ruff check passed; 63 Python files were formatted;
-21 comparison tests passed, including request limits, cache identity, accepted
-job/result lifecycle with a controlled fixture, explicit worker failure, and
-terrain rejection when any scenario lacks coverage. Four OpenAPI/example tests
-passed, including validation of distinct per-scenario dataset provenance.
-`frontend/npm run check:api` passed after regenerating the TypeScript schema.
-The full backend suite passed 374 tests with 16 skipped after the final changes.
+Current results from this checkout:
+
+- `ruff check .`: passed.
+- `ruff format --check .`: passed; 67 files already formatted.
+- Full backend suite: 403 passed, 16 skipped, 1 Starlette/AnyIO deprecation
+  warning.
+- Focused comparison, acceptance, ranking, and contract tests: 79 passed,
+  1 warning.
+- Frontend API type check and lint: passed; frontend tests: 177 passed;
+  production build: passed with Vite's existing large-chunk warning.
+- The comparison-result fixture now carries its synthetic timeline model in
+  scenario provenance; the comparison-level model remains the ranking model.
 
 The PostgreSQL integration test is present in
 `backend/tests/test_stage1_postgres.py`. It uses the existing `_test`-database
-guard, but was not run because `TEST_DATABASE_URL` is not configured. No live
-comparison was run; successful execution is blocked by the missing service.
+guard, but was not run because `TEST_DATABASE_URL` is not configured. Live
+Horizons and paired terrain comparisons were not run. These are separate from
+the controlled deterministic tests.
 
 ## Reproduction and configuration
 
@@ -92,15 +92,12 @@ $env:TEST_DATABASE_URL = "postgresql+psycopg://test_user:test_password@127.0.0.1
 
 The comparison request uses the same fields as
 `contracts/examples/comparison-request.json`. Poll the returned status URL and
-then fetch the result URL. Until the calculation service is integrated, the
-durable worker intentionally returns a failed job with
-`COMPARISON_UNAVAILABLE`.
+then fetch the result URL. The worker runs scenarios sequentially through the
+existing timeline service and provider concurrency lock; it fails the complete
+comparison job if any scenario fails.
 
 ## Remaining checks and limitations
 
 - Run the PostgreSQL integration test against a dedicated test database.
-- Integrate the calculation service and run deterministic controlled-result
-  acceptance cases through the actual executor.
-- Run a bounded real multi-scenario comparison after the service is available.
-- The API operation remains marked planned in OpenAPI until the comparison job
-  can produce a real result.
+- Run a bounded real multi-scenario comparison.
+- Visual-check the comparison UI against a running backend.

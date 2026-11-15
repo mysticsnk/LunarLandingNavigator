@@ -67,7 +67,8 @@ def test_synthetic_comparison_summary_matches_timeline_fixture():
     assert timeline["meta"]["time_resolution_minutes"] == comparison_request["step_minutes"]
     assert timeline["meta"]["horizon_mode"] == comparison_request["horizon_mode"]
     assert timeline["site"]["observer_height_m"] == comparison_request["observer_height_m"]
-    assert timeline["meta"]["model_version"] == comparison_result["meta"]["model_version"]
+    assert timeline["meta"]["model_version"] == ranked["provenance"]["model_version"]
+    assert timeline["meta"]["terrain_dataset_id"] == ranked["provenance"]["terrain_dataset_id"]
     assert timeline["meta"]["terrain_dataset_id"] is None
     assert comparison_result["meta"]["terrain_dataset_id"] is None
     assert ranked["summary"] == timeline["summary"]

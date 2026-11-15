@@ -28,7 +28,7 @@
         "next_earthset_at": "2027-07-15T18:00:00Z"
       },
       "provenance": {
-        "model_version": "geometric-timeline-v1",
+        "model_version": "development-fixture-v1",
         "terrain_dataset_id": null,
         "sources": [
           {

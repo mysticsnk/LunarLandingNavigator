@@ -262,16 +262,18 @@ Only successful calculation results are cached, and ready results remain availab
 for at least seven days after completion. Resource caching distinguishes fresh,
 cached and stale data and never replaces provider failure with synthetic data.
 
-The Stage 5 comparison route validates and durably accepts comparison requests.
-Until the comparison calculation service is integrated, the worker fails those
-jobs with `COMPARISON_UNAVAILABLE`; OpenAPI keeps the operation marked planned.
+The Stage 5 comparison route validates requests, resolves all scenario sites,
+and durably queues kind `comparison`. The worker evaluates each scenario through
+the timeline service in sequence, then invokes the shared v1 ranking service.
+Any scenario failure fails the complete job; a partial ranking is not stored.
+OpenAPI marks the operation implemented.
 
 The real map and terrain routers are registered by the default application.
 Terrain coverage and heightmaps use registered numerical datasets; terrain
 visibility calculations use the source raster and curved lunar geometry, while
-the local scene heightmap is display-only. Comparison implementation status is
-tracked in OpenAPI. Full rules above describe the complete v1 contract and do not
-imply that every planned operation is implemented.
+the local scene heightmap is display-only. Implementation status is tracked per
+operation in OpenAPI. Full rules above describe the v1 contract and do not imply
+that every operation is implemented.
 
 See integration/STAGE1_BACKEND.md for startup, recovery, cache policy, source
 provenance, remaining service precision limitations and team integration steps.
