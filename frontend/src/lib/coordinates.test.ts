@@ -8,6 +8,11 @@ import {
   enuToAzimuthElevation,
   isValidDirectionVector,
   normalizeVector,
+  enuToMoonFixed,
+  moonFixedToEnu,
+  moonFixedToGlobalScene,
+  globalSceneToMoonFixed,
+  latLonToGlobalScene,
 } from './coordinates'
 
 describe('coordinates library', () => {
@@ -242,6 +247,121 @@ describe('coordinates library', () => {
       // NaNs and infinities
       expect(isValidDirectionVector({ east: Number.NaN, north: 0, up: 0 })).toBe(false)
       expect(isValidDirectionVector({ east: 1, north: Number.POSITIVE_INFINITY, up: 0 })).toBe(false)
+    })
+  })
+
+  describe('Stage 5 Global Coordinates: enuToMoonFixed and moonFixedToEnu', () => {
+    it('transforms local Up vector [0, 0, 1] to radial MCMF unit vector at (0, 0)', () => {
+      const up = { east: 0, north: 0, up: 1 }
+      const mcmf = enuToMoonFixed(up, { latitude: 0, longitude: 0 })
+      expect(mcmf.x).toBeCloseTo(1, 6)
+      expect(mcmf.y).toBeCloseTo(0, 6)
+      expect(mcmf.z).toBeCloseTo(0, 6)
+    })
+
+    it('transforms local Up vector [0, 0, 1] to radial MCMF at North Pole (90, 0)', () => {
+      const up = { east: 0, north: 0, up: 1 }
+      const mcmf = enuToMoonFixed(up, { latitude: 90, longitude: 0 })
+      expect(mcmf.x).toBeCloseTo(0, 6)
+      expect(mcmf.y).toBeCloseTo(0, 6)
+      expect(mcmf.z).toBeCloseTo(1, 6)
+    })
+
+    it('transforms local Up vector [0, 0, 1] to radial MCMF at South Pole (-90, 0)', () => {
+      const up = { east: 0, north: 0, up: 1 }
+      const mcmf = enuToMoonFixed(up, { latitude: -90, longitude: 0 })
+      expect(mcmf.x).toBeCloseTo(0, 6)
+      expect(mcmf.y).toBeCloseTo(0, 6)
+      expect(mcmf.z).toBeCloseTo(-1, 6)
+    })
+
+    it('transforms local East vector [1, 0, 0] to +Y in MCMF at (0, 0)', () => {
+      const east = { east: 1, north: 0, up: 0 }
+      const mcmf = enuToMoonFixed(east, { latitude: 0, longitude: 0 })
+      expect(mcmf.x).toBeCloseTo(0, 6)
+      expect(mcmf.y).toBeCloseTo(1, 6)
+      expect(mcmf.z).toBeCloseTo(0, 6)
+    })
+
+    it('transforms local North vector [0, 1, 0] to +Z in MCMF at (0, 0)', () => {
+      const north = { east: 0, north: 1, up: 0 }
+      const mcmf = enuToMoonFixed(north, { latitude: 0, longitude: 0 })
+      expect(mcmf.x).toBeCloseTo(0, 6)
+      expect(mcmf.y).toBeCloseTo(0, 6)
+      expect(mcmf.z).toBeCloseTo(1, 6)
+    })
+
+    it('is reversible with moonFixedToEnu across diverse sites', () => {
+      const sites = [
+        { latitude: 0, longitude: 0 },
+        { latitude: 45, longitude: 90 },
+        { latitude: -89.44, longitude: 222.1 }, // Shackleton rim
+        { latitude: -89.9, longitude: -45 },
+      ]
+      const originalEnu = { east: 0.26726124, north: 0.53452248, up: 0.80178373 }
+
+      for (const site of sites) {
+        const mcmf = enuToMoonFixed(originalEnu, site)
+        const recovered = moonFixedToEnu(mcmf, site)
+        expect(recovered.east).toBeCloseTo(originalEnu.east, 5)
+        expect(recovered.north).toBeCloseTo(originalEnu.north, 5)
+        expect(recovered.up).toBeCloseTo(originalEnu.up, 5)
+      }
+    })
+
+    it('handles longitude wrap (e.g. 222.1° and -137.9°) identically', () => {
+      const dir = { east: 0.6, north: 0.8, up: 0 }
+      const v1 = enuToMoonFixed(dir, { latitude: -89.44, longitude: 222.1 })
+      const v2 = enuToMoonFixed(dir, { latitude: -89.44, longitude: -137.9 })
+      expect(v1.x).toBeCloseTo(v2.x, 6)
+      expect(v1.y).toBeCloseTo(v2.y, 6)
+      expect(v1.z).toBeCloseTo(v2.z, 6)
+    })
+  })
+
+  describe('Stage 5 Global Scene Mapping: moonFixedToGlobalScene and latLonToGlobalScene', () => {
+    it('maps MCMF North pole (+Z) to Three.js camera Up (+Y)', () => {
+      const northPoleMcmf = { x: 0, y: 0, z: 1 }
+      const scene = moonFixedToGlobalScene(northPoleMcmf, 3.0)
+      expect(scene.x).toBeCloseTo(0, 6)
+      expect(scene.y).toBeCloseTo(3.0, 6)
+      expect(scene.z).toBeCloseTo(0, 6)
+    })
+
+    it('maps MCMF Prime Meridian (+X) to Three.js (+X)', () => {
+      const primeMcmf = { x: 1, y: 0, z: 0 }
+      const scene = moonFixedToGlobalScene(primeMcmf, 2.5)
+      expect(scene.x).toBeCloseTo(2.5, 6)
+      expect(scene.y).toBeCloseTo(0, 6)
+      expect(scene.z).toBeCloseTo(0, 6)
+    })
+
+    it('maps MCMF 90 deg East (+Y) to Three.js (-Z)', () => {
+      const east90Mcmf = { x: 0, y: 1, z: 0 }
+      const scene = moonFixedToGlobalScene(east90Mcmf, 2.0)
+      expect(scene.x).toBeCloseTo(0, 6)
+      expect(scene.y).toBeCloseTo(0, 6)
+      expect(scene.z).toBeCloseTo(-2.0, 6)
+    })
+
+    it('is reversible with globalSceneToMoonFixed', () => {
+      const originalMcmf = { x: 0.5, y: -0.5, z: 0.70710678 }
+      const scene = moonFixedToGlobalScene(originalMcmf, 4.0)
+      const recovered = globalSceneToMoonFixed(scene, 4.0)
+      expect(recovered.x).toBeCloseTo(originalMcmf.x, 6)
+      expect(recovered.y).toBeCloseTo(originalMcmf.y, 6)
+      expect(recovered.z).toBeCloseTo(originalMcmf.z, 6)
+    })
+
+    it('computes exact position on sphere with latLonToGlobalScene', () => {
+      const southPole = latLonToGlobalScene({ latitude: -90, longitude: 0 }, 5.0)
+      expect(southPole.x).toBeCloseTo(0, 6)
+      expect(southPole.y).toBeCloseTo(-5.0, 6)
+      expect(southPole.z).toBeCloseTo(0, 6)
+
+      const shackleton = latLonToGlobalScene({ latitude: -89.44, longitude: -137.9 }, 3.0)
+      expect(Math.hypot(shackleton.x, shackleton.y, shackleton.z)).toBeCloseTo(3.0, 6)
+      expect(shackleton.y).toBeLessThan(-2.99) // Near south pole
     })
   })
 })

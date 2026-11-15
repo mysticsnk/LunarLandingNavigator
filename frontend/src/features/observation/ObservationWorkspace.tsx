@@ -5,7 +5,7 @@ import type { Site, SiteList, LayerList, TerrainCoverage } from '../../api/types
 import { SourceLink } from '../../components/SourceLink'
 import { RequestError } from '../../components/RequestError'
 import { LunarMap } from '../map'
-import { LunarScene, useHeightmap } from '../scene'
+import { LunarScene, GlobalMoonScene, useHeightmap } from '../scene'
 import {
   buildRequest,
   buildTimelineRequest,
@@ -51,6 +51,7 @@ export function ObservationWorkspace() {
   const timeline = useTimeline()
   const comparison = useComparison()
   const playback = useTimelinePlayback(timeline.result)
+  const [layoutMode, setLayoutMode] = useState<'split' | 'enlarge-global' | 'enlarge-local'>('split')
 
   const coverageCoordinate = useMemo(() => draft.mode === 'catalog' && draft.site
     ? { latitude: draft.site.latitude, longitude: draft.site.longitude }
@@ -664,36 +665,85 @@ export function ObservationWorkspace() {
           </details>
         </aside>
         <div className="grid-content">
-          <div className="visual-grid">
+          <div className="visual-grid" data-layout-mode={layoutMode}>
             <section
-              className="workspace-card visual-card"
+              className={`workspace-card visual-card ${layoutMode === 'enlarge-global' ? 'visual-card-enlarged' : ''}`}
               aria-labelledby="map-heading"
+              style={layoutMode === 'enlarge-global' ? { gridColumn: '1 / -1' } : undefined}
             >
-              <h2 id="map-heading">Global Moon view</h2>
+              <div className="card-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 id="map-heading">Global Moon view</h2>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  style={{ padding: '2px 8px', fontSize: '0.72rem' }}
+                  onClick={() => setLayoutMode(layoutMode === 'enlarge-global' ? 'split' : 'enlarge-global')}
+                  title="Toggle enlarged view for Global Moon"
+                  data-testid="toggle-enlarge-global"
+                >
+                  {layoutMode === 'enlarge-global' ? 'Restore Split' : 'Enlarge Globe'}
+                </button>
+              </div>
               <p className="muted">
-                Global lunar projection; click to select a location.
+                Complete spherical Moon in MCMF coordinates with active Earth communication link · drag to orbit, scroll to zoom.
               </p>
-              <div className="map-viewport">
-                {!mapLayers && !mapError && (
-                  <p role="status">Loading map layers...</p>
-                )}
-                {mapError && <RequestError error={mapError} />}
-                {mapLayers?.items.length === 0 && (
-                  <p>No registered map layers are available.</p>
-                )}
-                {mapError && (
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => {
-                      setMapError(null)
-                      setMapAttempt((value) => value + 1)
-                    }}
-                  >
-                    Retry map layers
-                  </button>
-                )}
-                {!!mapLayers?.items.length && (
+
+              {/* 3D Global Moon Viewport (Dominant Stage 5 view) */}
+              <div
+                className="map-viewport"
+                data-testid="global-moon-viewport"
+                style={{
+                  height: layoutMode === 'enlarge-global' ? '520px' : '360px',
+                  marginBottom: '10px',
+                }}
+              >
+                <GlobalMoonScene
+                  catalogSites={catalog?.items}
+                  selectedSite={effectiveSite}
+                  selectedCoordinate={coordinate || null}
+                  observationPoint={selectedPoint}
+                  isLoading={busy}
+                  dataStatus={(workflow === 'timeline' ? timelineResult?.meta.data_status : result?.meta.data_status) ?? null}
+                  onSelectCoordinate={(val) =>
+                    change({
+                      mode: 'custom',
+                      latitude: String(val.latitude),
+                      longitude: String(val.longitude),
+                    })
+                  }
+                  onSelectSite={(site) => {
+                    change({
+                      mode: 'catalog',
+                      site,
+                      latitude: String(site.latitude),
+                      longitude: String(site.longitude),
+                    })
+                  }}
+                />
+              </div>
+
+              {/* Registered 2D Layer Map with Layer Switching */}
+              {!mapLayers && !mapError && (
+                <p role="status">Loading map layers...</p>
+              )}
+              {mapError && <RequestError error={mapError} />}
+              {mapLayers?.items.length === 0 && (
+                <p>No registered map layers are available.</p>
+              )}
+              {mapError && (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => {
+                    setMapError(null)
+                    setMapAttempt((value) => value + 1)
+                  }}
+                >
+                  Retry map layers
+                </button>
+              )}
+              {!!mapLayers?.items.length && (
+                <div style={{ marginTop: '8px' }}>
                   <LunarMap
                     layers={mapLayers.items}
                     quickmapUrl={activeCatalogSite?.quickmap_url ?? null}
@@ -707,22 +757,39 @@ export function ObservationWorkspace() {
                       })
                     }
                   />
-                )}
-              </div>
+                </div>
+              )}
               <p className="field-help">
-                Registered Moon Trek / LROC imagery. Numerical terrain is shown
-                in the local scene when available.
+                Spherical MCMF frame with authoritative Earth/Sun vectors and communication line. Registered Moon Trek / LROC imagery below.
               </p>
             </section>
             <section
-              className="workspace-card visual-card"
+              className={`workspace-card visual-card ${layoutMode === 'enlarge-local' ? 'visual-card-enlarged' : ''}`}
               aria-labelledby="scene-heading"
+              style={layoutMode === 'enlarge-local' ? { gridColumn: '1 / -1' } : undefined}
             >
-              <h2 id="scene-heading">Local terrain inspector</h2>
+              <div className="card-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 id="scene-heading">Local terrain inspector</h2>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  style={{ padding: '2px 8px', fontSize: '0.72rem' }}
+                  onClick={() => setLayoutMode(layoutMode === 'enlarge-local' ? 'split' : 'enlarge-local')}
+                  title="Enlarge local terrain inspector"
+                  data-testid="toggle-enlarge-local"
+                >
+                  {layoutMode === 'enlarge-local' ? 'Restore Split' : 'Enlarge Scene'}
+                </button>
+              </div>
               <p className="muted">
                 Schematic local ENU scene · directions from the observation API.
               </p>
-              <div className="scene-viewport">
+              <div
+                className="scene-viewport"
+                style={{
+                  height: layoutMode === 'enlarge-local' ? '560px' : undefined,
+                }}
+              >
                 <LunarScene
                   observationPoint={selectedPoint}
                   site={effectiveSite}
