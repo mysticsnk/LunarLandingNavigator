@@ -10,7 +10,7 @@ export function App() {
           <h1 className="app-title" data-testid="app-title">
             Lunar Landing Site Navigator
           </h1>
-          <span className="stage-badge">Stage 3</span>
+          <span className="stage-badge">Stage 4</span>
         </div>
         {isDemoModeEnabled() && (
           <span className="demo-badge" data-testid="header-demo-badge">
@@ -20,7 +20,7 @@ export function App() {
       </header>
       <ObservationWorkspace />
       <footer className="app-footer">
-        <span>Lunar Landing Site Navigator · Geometric observations</span>
+        <span>Lunar Landing Site Navigator · Geometric and terrain-aware observations</span>
         <span>API v1 · All observation times in UTC</span>
       </footer>
     </div>

@@ -1,7 +1,7 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { apiClient } from '../../api/client'
 import { ApiClientError } from '../../api/errors'
-import type { Site, SiteList, LayerList } from '../../api/types'
+import type { Site, SiteList, LayerList, TerrainCoverage } from '../../api/types'
 import { SourceLink } from '../../components/SourceLink'
 import { RequestError } from '../../components/RequestError'
 import { LunarMap } from '../map'
@@ -40,9 +40,29 @@ export function ObservationWorkspace() {
   const [catalogError, setCatalogError] = useState<ApiClientError | null>(null)
   const [attempt, setAttempt] = useState(0)
   const [validation, setValidation] = useState<string | null>(null)
+  const [coverage, setCoverage] = useState<TerrainCoverage | null>(null)
+  const [coverageState, setCoverageState] = useState<'idle' | 'checking' | 'supported' | 'unsupported' | 'error'>('idle')
   const observation = useObservation()
   const timeline = useTimeline()
   const playback = useTimelinePlayback(timeline.result)
+
+  const coverageCoordinate = useMemo(() => draft.mode === 'catalog' && draft.site
+    ? { latitude: draft.site.latitude, longitude: draft.site.longitude }
+    : draft.mode === 'custom' && draft.latitude.trim() && draft.longitude.trim() &&
+        Number.isFinite(Number(draft.latitude)) && Number.isFinite(Number(draft.longitude)) &&
+        Number(draft.latitude) >= -90 && Number(draft.latitude) <= 90 && Number(draft.longitude) >= -180 && Number(draft.longitude) < 360
+      ? { latitude: Number(draft.latitude), longitude: Number(draft.longitude) }
+      : null, [draft.mode, draft.site, draft.latitude, draft.longitude])
+  useEffect(() => {
+    if (draft.horizonMode !== 'terrain' || !coverageCoordinate) {
+      return
+    }
+    const controller = new AbortController()
+    apiClient.getTerrainCoverage(coverageCoordinate.latitude, coverageCoordinate.longitude, { signal: controller.signal })
+      .then((value) => { if (!controller.signal.aborted) { setCoverage(value); setCoverageState(value.available ? 'supported' : 'unsupported') } })
+      .catch(() => { if (!controller.signal.aborted) { setCoverage(null); setCoverageState('error') } })
+    return () => controller.abort()
+  }, [draft.horizonMode, coverageCoordinate])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -100,7 +120,21 @@ export function ObservationWorkspace() {
     observation.reset()
     timeline.reset()
     setValidation(null)
-    setDraft((previous) => ({ ...previous, ...patch }))
+    const next = { ...draft, ...patch }
+    const validLocation = next.mode === 'catalog' ? next.site !== null :
+      next.latitude.trim() !== '' && next.longitude.trim() !== '' &&
+      Number.isFinite(Number(next.latitude)) && Number.isFinite(Number(next.longitude)) &&
+      Number(next.latitude) >= -90 && Number(next.latitude) <= 90 && Number(next.longitude) >= -180 && Number(next.longitude) < 360
+    const locationChanged = next.mode !== draft.mode || (next.mode === 'catalog'
+      ? next.site?.id !== draft.site?.id
+      : next.latitude !== draft.latitude || next.longitude !== draft.longitude)
+    if (locationChanged || next.horizonMode !== draft.horizonMode) setCoverage(null)
+    setCoverageState(next.horizonMode !== 'terrain' || !validLocation
+      ? 'idle'
+      : locationChanged || draft.horizonMode !== 'terrain'
+        ? 'checking'
+        : coverageState)
+    setDraft(next)
   }
 
   function selectWorkflow(next: 'now' | 'timeline') {
@@ -112,11 +146,15 @@ export function ObservationWorkspace() {
 
   function submit(event: FormEvent) {
     event.preventDefault()
+    if (draft.horizonMode === 'terrain' && coverageState !== 'supported') {
+      setValidation(coverageState === 'checking' ? 'Terrain coverage is still being checked.' : coverageState === 'unsupported' ? 'Terrain is unavailable at this location. Choose geometric mode explicitly to continue.' : coverageState === 'error' ? 'Terrain coverage check failed. Retry the check before requesting terrain mode.' : 'Select a valid location to check terrain coverage.')
+      return
+    }
     try {
       setValidation(null)
       if (workflow === 'timeline')
         void timeline.submit(buildTimelineRequest(draft))
-      else void observation.submit(buildRequest(draft))
+      else void observation.submit(buildRequest(draft), coverage)
     } catch (error) {
       observation.reset()
       timeline.reset()
@@ -139,12 +177,16 @@ export function ObservationWorkspace() {
   const effectiveSite =
     displayedSite ?? (draft.mode === 'catalog' ? draft.site : null)
   const activeCatalogSite =
-    draft.mode === 'catalog' && draft.site
-      ? draft.site
-      : displayedSite?.site_id
-        ? catalog?.items.find((item) => item.id === displayedSite.site_id) ?? null
+    displayedSite?.site_id
+      ? catalog?.items.find((item) => item.id === displayedSite.site_id) ??
+        (draft.site?.id === displayedSite.site_id ? draft.site : null)
+      : draft.mode === 'catalog'
+        ? draft.site
         : null
-  const terrainRegionId = activeCatalogSite?.terrain_region_id ?? null
+  const displayedCoverage = workflow === 'now' && result
+    ? observation.resultCoverage
+    : coverage
+  const terrainRegionId = activeCatalogSite?.terrain_region_id ?? displayedCoverage?.region_id ?? null
   const {
     heightmap,
     loading: isTerrainLoading,
@@ -171,7 +213,7 @@ export function ObservationWorkspace() {
         <p className="eyebrow">{workflow === 'timeline' ? 'MULTI-DAY TIMELINE' : 'SINGLE-TIME OBSERVATION'}</p>
         <h2>Explore a lunar vantage point</h2>
         <p className="muted">
-          Choose a location and a UTC {workflow === 'timeline' ? 'period' : 'instant'} to inspect geometric Sun and Earth visibility.
+          Choose a location and a UTC {workflow === 'timeline' ? 'period' : 'instant'} to inspect Sun and Earth visibility.
         </p>
       </div>
       <div className="main-grid">
@@ -461,8 +503,21 @@ export function ObservationWorkspace() {
                   </label>
                 </div>
                 <p className="field-help">
-                  Geometric horizon · terrain occlusion is unavailable in Stage 3.
+                  Geometric mode uses the local reference horizon. Terrain mode uses prepared elevation data; the scene mesh is for display.
                 </p>
+                <label className="field">
+                  Horizon mode
+                  <select aria-label="Horizon mode" value={draft.horizonMode} onChange={(event) => change({ horizonMode: event.target.value as ScenarioDraft['horizonMode'] })}>
+                    <option value="geometric">Geometric</option><option value="terrain">Terrain-aware</option>
+                  </select>
+                </label>
+                {draft.horizonMode === 'terrain' && <p role={coverageState === 'error' || coverageState === 'unsupported' ? 'alert' : 'status'} className="field-help">
+                  {coverageState === 'checking' && 'Checking terrain coverage…'}
+                  {coverageState === 'supported' && `Terrain supported${coverage?.dataset_id ? ` · ${coverage.dataset_id}` : ''}${coverage?.resolution_m != null ? ` · ${coverage.resolution_m} m` : ''}`}
+                  {coverageState === 'unsupported' && `Terrain unavailable${coverage?.reason ? `: ${coverage.reason}` : ''}. Choose geometric mode explicitly to continue.`}
+                  {coverageState === 'error' && 'Terrain coverage check failed. Retry by changing the location or mode.'}
+                  {coverageState === 'idle' && 'Select a valid location to check terrain coverage.'}
+                </p>}
               </fieldset>
               {validation && (
                 <p role="alert" className="request-error">
@@ -570,8 +625,8 @@ export function ObservationWorkspace() {
                 )}
               </div>
               <p className="field-help">
-                Registered Moon Trek / LROC imagery. Physical terrain is not
-                modeled.
+                Registered Moon Trek / LROC imagery. Numerical terrain is shown
+                in the local scene when available.
               </p>
             </section>
             <section
@@ -593,6 +648,9 @@ export function ObservationWorkspace() {
                     (workflow === 'timeline' ? timelineResult?.site.observer_height_m : result?.site.observer_height_m) ??
                     (Number(draft.height) || undefined)
                   }
+                  horizonMode={(workflow === 'timeline' ? timelineResult?.meta.horizon_mode : result?.meta.horizon_mode) ?? draft.horizonMode}
+                  terrainDatasetId={(workflow === 'timeline' ? timelineResult?.meta.terrain_dataset_id : result?.meta.terrain_dataset_id) ?? null}
+                  visibilityMarginDeg={workflow === 'now' && result ? observation.resultRequest?.visibility_margin_deg : Number(draft.margin)}
                   isLoading={busy}
                   heightmap={heightmap}
                   isTerrainLoading={isTerrainLoading}
@@ -614,7 +672,10 @@ export function ObservationWorkspace() {
               </section>
             )
           ) : (
-            <ObservationResult result={result} />
+            <>
+              {result && observation.resultRequest && <p className="muted">Displayed result uses {observation.resultRequest.horizon_mode} mode and its submitted scenario settings{observation.busy ? '; a new calculation is running' : ''}. Form edits do not change this result.</p>}
+              <ObservationResult result={result} request={observation.resultRequest} coverage={observation.resultCoverage} />
+            </>
           )}
           <CSAResources />
         </div>

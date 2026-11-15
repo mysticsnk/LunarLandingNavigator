@@ -11,6 +11,7 @@ export interface ScenarioDraft {
   stepMinutes: string
   height: string
   margin: string
+  horizonMode: 'geometric' | 'terrain'
 }
 
 export function initialScenario(): ScenarioDraft {
@@ -25,6 +26,7 @@ export function initialScenario(): ScenarioDraft {
     stepMinutes: '120',
     height: '2',
     margin: '0',
+    horizonMode: 'geometric',
   }
 }
 
@@ -93,7 +95,7 @@ export function buildRequest(draft: ScenarioDraft): NowRequest {
   return {
     site,
     target_time,
-    horizon_mode: 'geometric',
+    horizon_mode: draft.horizonMode,
     observer_height_m,
     visibility_margin_deg,
   }

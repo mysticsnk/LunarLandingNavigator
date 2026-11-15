@@ -103,11 +103,13 @@ The local surface geometry is built via `buildTerrainGeometry`:
 - **Site & Dataset Transitions:** When the operator selects a different site or
   dataset, previous terrain meshes are immediately cleared, preventing old terrain
   from being misattributed to a new coordinate.
-- **Graceful Error Fallback:** If the heightmap endpoint returns 404, fails network
+- **Graceful Display Error Handling:** If the heightmap endpoint returns 404, fails network
   validation, or encounters a WebGL context loss:
   1. An amber notice (`scene-terrain-error-notice`) displays the failure cause.
-  2. The scene smoothly falls back to the Stage 3 geometric horizon plane
-     (`GeometricHorizonReference`).
+  2. The scene uses a local geometric reference surface for display
+     (`GeometricHorizonReference`) when the numerical display mesh is unavailable.
+     This visual fallback does not change the selected API horizon mode or its
+     returned visibility values.
   3. All forms, charts, tables, and numeric outputs remain fully interactive and isolated
      inside the enclosing `SceneErrorBoundary`.
 
@@ -120,7 +122,8 @@ The Stage 4 terrain visualization suite was executed and validated:
 ```powershell
 cd frontend
 npm.cmd run lint
-npm.cmd test -- --run
+npm.cmd run check:api
+npm.cmd test -- --testTimeout=10000
 npm.cmd run build
 ```
 
@@ -128,7 +131,7 @@ npm.cmd run build
 
 - **Linter (oxlint):** 53 files inspected; 0 errors, 0 warnings.
 - **TypeScript & Vite Build (`tsc -b && vite build`):** Clean compilation, 56 modules transformed, production assets generated successfully.
-- **Test Suite (Vitest):** 14 test suites, 164 unit/integration tests passed (100% pass rate).
+- **Test Suite (Vitest):** 14 test suites, 167 unit/integration tests passed at the recorded run.
   - `terrainMesh.test.ts` (12 tests):
     - Rejection of invalid frames, negative spacing, and mismatched array lengths.
     - Detection and rejection of `NaN` and `Infinity` elevation values.
@@ -142,12 +145,12 @@ npm.cmd run build
     - Immediate cache eviction and mesh clearing on region ID change.
     - Robust error propagation on network failure with manual retry support.
     - Null/undefined region ID handling.
-  - `Scene.test.tsx` (20 tests):
+  - `Scene.test.tsx`:
     - Terrain mesh rendering with provenance metadata.
     - Observer elevation above local interpolated surface.
     - Dynamic HUD horizon threshold display (`Hrz {deg}°`).
-    - Fallback to geometric horizon on heightmap fetch error.
+    - Display error handling without changing the selected API horizon mode.
     - Loading overlay during asset transfer.
     - Error isolation via `SceneErrorBoundary`.
-  - `App.test.tsx` (14 tests):
+  - `App.test.tsx`:
     - Full end-to-end workspace integration with catalog selection, timeline scrubbing, and scene synchronization.

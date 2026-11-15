@@ -2,10 +2,10 @@ openapi: 3.1.0
 info:
   title: Lunar Landing Site Navigator API v1
   version: 1.0.0
-  description: Agreed API v1 contract. Stage 3 implements multi-day geometric timeline
-    jobs alongside the Stage 2 health, catalog, CSA, map, and single-time observation
-    routes. Comparison and physical terrain occlusion remain
-    planned. Examples are synthetic development/test fixtures, not measured NASA results.
+  description: Agreed API v1 contract. Stage 4 implements numerical terrain coverage,
+    heightmaps, and terrain-aware single-time and timeline jobs alongside the Stage 3
+    timeline and Stage 2 health, catalog, CSA, map, and observation routes. Comparison
+    remains planned. Examples are synthetic development/test fixtures, not measured NASA results.
     See docs/API_V1.md and docs/CONTRACT_DECISIONS.md.
 paths:
   /api/v1/health:
@@ -122,9 +122,8 @@ paths:
                 healthy:
                   summary: Development/test fixture; not measured NASA results
                   externalValue: ./examples/healthy.json
-      description: Unknown request fields and query parameters are rejected. Responses
-        use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions
-        use geometric mode only.
+      description: Implemented. Responses use UTC timestamps ending in Z, and unknown
+        query parameters are rejected.
       x-reject-unknown-query-parameters: true
   /api/v1/sites:
     get:
@@ -257,9 +256,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SiteList'
-      description: Unknown request fields and query parameters are rejected. Responses
-        use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions
-        use geometric mode only.
+      description: Implemented. Responses use UTC timestamps ending in Z, and unknown
+        query parameters are rejected.
       x-reject-unknown-query-parameters: true
   /api/v1/sites/{site_id}:
     get:
@@ -374,9 +372,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Site'
-      description: Unknown request fields and query parameters are rejected. Responses
-        use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions
-        use geometric mode only.
+      description: Implemented. Responses use UTC timestamps ending in Z, and unknown
+        query parameters are rejected.
       x-reject-unknown-query-parameters: true
   /api/v1/map/layers:
     get:
@@ -883,6 +880,8 @@ paths:
       operationId: getTerrainCoverage
       summary: getTerrainCoverage
       x-implementation-status: implemented
+      description: Reports usable numerical terrain support from a registered prepared
+        dataset; raw imagery extents do not establish terrain availability.
       parameters:
       - name: latitude
         in: query
@@ -1009,6 +1008,8 @@ paths:
       operationId: getHeightmap
       summary: getHeightmap
       x-implementation-status: implemented
+      description: Returns a bounded local ENU display grid for a registered terrain
+        region. Physical visibility calculations use the source elevation data.
       parameters:
       - name: region_id
         in: path
@@ -1231,9 +1232,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CSAResources'
-      description: Unknown request fields and query parameters are rejected. Responses
-        use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions
-        use geometric mode only.
+      description: Implemented. Responses use UTC timestamps ending in Z, and unknown
+        query parameters are rejected.
       x-reject-unknown-query-parameters: true
   /api/v1/ephemeris/now:
     post:
@@ -1353,9 +1353,8 @@ paths:
                 accepted:
                   summary: Development/test fixture; not measured NASA results
                   externalValue: ./examples/job-accepted-now.json
-      description: Unknown request fields and query parameters are rejected. Responses
-        use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions
-        use geometric mode only.
+      description: Implemented in Stage 4. Accepts geometric or supported terrain mode;
+        terrain requests never fall back to geometric mode.
       requestBody:
         required: true
         content:
@@ -1481,8 +1480,8 @@ paths:
                 accepted:
                   summary: Development/test fixture; not measured NASA results
                   externalValue: ./examples/job-accepted.json
-      description: Implemented in Stage 3. Timeline calculations use geometric mode;
-        comparison and physical terrain occlusion remain unimplemented.
+      description: Implemented in Stage 3 and extended in Stage 4. Accepts geometric
+        or supported terrain mode; terrain requests never fall back to geometric mode.
       requestBody:
         required: true
         content:
@@ -1608,8 +1607,7 @@ paths:
                 accepted:
                   summary: Development/test fixture; not measured NASA results
                   externalValue: ./examples/job-accepted-comparison.json
-      description: Planned contract only. Not registered by the Stage 2 backend.
-        Timeline, comparison and physical terrain occlusion are excluded.
+      description: Reserved by the API v1 contract but not implemented in Stage 4.
       requestBody:
         required: true
         content:
@@ -1744,9 +1742,8 @@ paths:
                 failed:
                   summary: Development/test fixture; not measured NASA results
                   externalValue: ./examples/job-failed.json
-      description: Unknown request fields and query parameters are rejected. Responses
-        use UTC timestamps ending in Z. Implemented in Stage 3; now and timeline jobs
-        use geometric mode only.
+      description: Implemented. Results may use geometric or terrain mode as recorded
+        in their result metadata. Responses use UTC timestamps ending in Z.
       x-reject-unknown-query-parameters: true
   /api/v1/jobs/{job_id}/result:
     get:
@@ -1900,9 +1897,8 @@ paths:
                 comparison:
                   summary: Development/test fixture; synthetic values
                   externalValue: ./examples/comparison-result.json
-      description: Unknown request fields and query parameters are rejected. Responses
-        use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions
-        use geometric mode only.
+      description: Implemented. Results may use geometric or terrain mode as recorded
+        in their result metadata. Responses use UTC timestamps ending in Z.
       x-reject-unknown-query-parameters: true
 components:
   schemas:

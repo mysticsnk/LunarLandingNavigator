@@ -48,10 +48,15 @@ passed readiness checks; the external manifest reports `terrain_ready`, frame
 The local development PostgreSQL database was upgraded to
 `0003_stage4_terrain_registry`, and dataset
 `lola-product-90-09b7ca80f9e6a146` was registered. The registry stores the asset
-path outside Git and pins the checksum and processing version. The full terrain
-now/timeline job path and live Horizons calls have not been run, so successful
-observer samples do not prove that every requested horizon ray has complete
-coverage.
+path outside Git and pins the checksum and processing version. In addition to the
+controlled provider/terrain integration tests, bounded live Horizons observation
+and timeline jobs were submitted through the API and separate worker and persisted
+in a temporary isolated PostgreSQL database using the real DEM. The observation
+job succeeded for `2027-07-15T12:00:00Z`; both visibility flags were false. The
+one-day timeline at 360-minute resolution succeeded with four points and zero
+sunlit, Earth-visible, and golden-window hours. Both results recorded dataset
+`lola-product-90-09b7ca80f9e6a146`. This verifies the selected location and period
+end-to-end, not every terrain ray or all of Product 90 coverage.
 
 ## Setup and reproduction
 
@@ -62,12 +67,12 @@ database:
 ..\.venv\Scripts\python.exe -m alembic upgrade head
 ..\.venv\Scripts\python.exe tools\prepare_terrain.py LDEM_80S_20MPP_ADJ.TIF --download --allow-large-download --resume
 ..\.venv\Scripts\python.exe tools\prepare_terrain.py LDEM_80S_20MPP_ADJ.TIF --file "$env:LOCALAPPDATA\LunarLandingNavigator\terrain\LDEM_80S_20MPP_ADJ.TIF"
-..\.venv\Scripts\python.exe tools\register_terrain.py "$env:LOCALAPPDATA\LunarLandingNavigator\terrain\LDEM_80S_20MPP_ADJ.TIF.terrain.json"
+..\.venv\Scripts\python.exe -m tools.register_terrain "$env:LOCALAPPDATA\LunarLandingNavigator\terrain\LDEM_80S_20MPP_ADJ.TIF.terrain.json"
 ```
 
 The migration and registration commands write to PostgreSQL. Use the intended
-development database; database writes were not run as part of this validation.
-The API and durable observation worker remain separate processes. `RASTERIO`
+development database or an isolated test database. The API and durable
+observation worker remain separate processes. `RASTERIO`
 uses bounded GDAL cache configuration in the raster reader; no per-request
 source download is performed.
 
@@ -95,25 +100,20 @@ at azimuth 90 degrees returned 1.761216 degrees at a 10 m radial sample step;
 the observer surface sample was 1,952.356093 m. These are outputs from this
 specific raster and implementation, not independent accuracy measurements.
 Alembic reached `0003_stage4_terrain_registry`; registration returned
-`lola-product-90-09b7ca80f9e6a146`. Deterministic verification ran Ruff,
-format-check, `compileall`, 40 terrain tests, and 27 contract tests. One
-`TestClient` runtime health test was deselected because Windows asyncio
-socket-pair creation timed out in this environment. No database-writing
-integration test against an isolated test database was run. Follow-up
-read-only in-process route checks returned HTTP 200 for both coverage and
-heightmap. A direct worker-function observation using live Horizons at
-`2027-07-15T12:00:00Z` succeeded with the registered DEM; Sun elevation/horizon
-were -1.088272° / 0.097070° and Earth elevation/horizon were -6.179106° /
-1.506503°. Both visibility flags were false. A one-day timeline at 360-minute
-resolution also succeeded with four points and returned zero sunlit, Earth
-visible, and golden-window hours. These live calculations were not persisted as
-jobs. A separate PostgreSQL integration test on a temporary isolated container
-passed for terrain now and timeline job lifecycle, controlled Horizons fixtures,
-result persistence, cache reuse, and observer altitude. Two existing isolated
-PostgreSQL tests also passed for durable cache and lease fencing. The new test
-uses a test-only controlled terrain service and registry row; its fixture values
-are not used for operational requests. Durable job results were validated
-against the API schemas.
+`lola-product-90-09b7ca80f9e6a146`. The backend verification passed Ruff,
+format-check, and 359 tests using a temporary isolated PostgreSQL container;
+eight opt-in live-provider probes were skipped. PostgreSQL integration covered
+terrain now/timeline job lifecycle, controlled provider fixtures, result
+persistence, cache reuse, observer altitude, durable cache, and lease fencing.
+The bounded live smoke run then submitted a terrain now job and a one-day,
+360-minute terrain timeline through the local API with the separate worker and
+real Product 90 DEM. Both jobs succeeded and their results were fetched from the
+job result routes; the jobs used the isolated test database, which was removed
+after the run. The now result had both visibility flags false. The timeline had
+four samples and zero sunlit, Earth-visible, and golden-window hours. The route
+health check returned `healthy` with database `ok`. These checks verify the
+selected workflow and location, not independent terrain accuracy or all of
+Product 90 coverage. Controlled terrain fixtures remain test-only.
 
 Reproduce the database integration checks against a dedicated PostgreSQL test
 database whose name ends in `_test`:
