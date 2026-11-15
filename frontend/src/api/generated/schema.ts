@@ -151,10 +151,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * getTerrainCoverage
-         * @description Planned contract only. Not registered by the Stage 2 backend. Timeline, comparison and physical terrain occlusion are excluded.
-         */
+        /** getTerrainCoverage */
         get: operations["getTerrainCoverage"];
         put?: never;
         post?: never;
@@ -171,10 +168,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * getHeightmap
-         * @description Planned contract only. Not registered by the Stage 2 backend. Timeline, comparison and physical terrain occlusion are excluded.
-         */
+        /** getHeightmap */
         get: operations["getHeightmap"];
         put?: never;
         post?: never;
