@@ -49,6 +49,9 @@ vi.mock('./features/scene', () => ({
     visual.scene(props)
     return <div data-testid="scene-integration" />
   },
+  GlobalMoonScene: () => {
+    return <div data-testid="global-moon-integration" />
+  },
   useHeightmap: vi.fn(() => ({
     heightmap: null,
     loading: false,
