@@ -3,8 +3,8 @@
 Revision ID: 0005_additional_landing_sites
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "0005_additional_landing_sites"
@@ -20,7 +20,9 @@ ADDITIONAL_SITES = [
         "category": "clps",
         "latitude": -80.13,
         "longitude": 1.44,
-        "description": "First commercial CLPS soft landing, near Malapert A in the lunar south polar region.",
+        "description": (
+            "First commercial CLPS soft landing, near Malapert A in the lunar south polar region."
+        ),
         "source_url": "https://www.nasa.gov/commercial-lunar-payload-services/",
         "quickmap_url": None,
         "terrain_region_id": None,
@@ -31,7 +33,10 @@ ADDITIONAL_SITES = [
         "category": "clps",
         "latitude": -84.79,
         "longitude": -29.20,
-        "description": "Targeted CLPS mission carrying the PRIME-1 polar ice drill near Shackleton Connecting Ridge.",
+        "description": (
+            "Targeted CLPS mission carrying the PRIME-1 polar ice drill near "
+            "Shackleton Connecting Ridge."
+        ),
         "source_url": "https://www.nasa.gov/commercial-lunar-payload-services/",
         "quickmap_url": None,
         "terrain_region_id": "shackleton_connecting_ridge",
@@ -42,7 +47,9 @@ ADDITIONAL_SITES = [
         "category": "clps",
         "latitude": -85.40,
         "longitude": 31.70,
-        "description": "Targeted CLPS lunar south polar delivery near Mons Mouton and the Nobile region.",
+        "description": (
+            "Targeted CLPS lunar south polar delivery near Mons Mouton and the Nobile region."
+        ),
         "source_url": "https://www.nasa.gov/commercial-lunar-payload-services/",
         "quickmap_url": None,
         "terrain_region_id": None,
@@ -98,7 +105,10 @@ ADDITIONAL_SITES = [
         "category": "international",
         "latitude": 43.058,
         "longitude": -51.916,
-        "description": "CNSA lunar sample return mission site in Northern Oceanus Procellarum near Mons Rümker.",
+        "description": (
+            "CNSA lunar sample return mission site in Northern Oceanus "
+            "Procellarum near Mons Rümker."
+        ),
         "source_url": "http://www.cnsa.gov.cn/",
         "quickmap_url": None,
         "terrain_region_id": None,
@@ -109,7 +119,9 @@ ADDITIONAL_SITES = [
         "category": "international",
         "latitude": -41.625,
         "longitude": -153.985,
-        "description": "Historic lunar far-side sample return mission site in the southern Apollo basin.",
+        "description": (
+            "Historic lunar far-side sample return mission site in the southern Apollo basin."
+        ),
         "source_url": "http://www.cnsa.gov.cn/",
         "quickmap_url": None,
         "terrain_region_id": None,
@@ -131,7 +143,9 @@ ADDITIONAL_SITES = [
         "category": "international",
         "latitude": 12.714,
         "longitude": 62.213,
-        "description": "Soviet Luna sample return spacecraft touchdown in southeastern Mare Crisium.",
+        "description": (
+            "Soviet Luna sample return spacecraft touchdown in southeastern Mare Crisium."
+        ),
         "source_url": "https://nssdc.gsfc.nasa.gov/planetary/lunar/lunar_sites.html",
         "quickmap_url": None,
         "terrain_region_id": None,
@@ -143,7 +157,9 @@ ADDITIONAL_SITES = [
         "category": "artemis",
         "latitude": -89.66,
         "longitude": 125.0,
-        "description": "Artemis candidate landing region on the prominent ridge near Shackleton crater.",
+        "description": (
+            "Artemis candidate landing region on the prominent ridge near Shackleton crater."
+        ),
         "source_url": "https://pgda.gsfc.nasa.gov/products/78",
         "quickmap_url": None,
         "terrain_region_id": None,
@@ -154,7 +170,9 @@ ADDITIONAL_SITES = [
         "category": "artemis",
         "latitude": -87.50,
         "longitude": -15.0,
-        "description": "Artemis candidate landing region along the rim of permanently shadowed Haworth crater.",
+        "description": (
+            "Artemis candidate landing region along the rim of permanently shadowed Haworth crater."
+        ),
         "source_url": "https://pgda.gsfc.nasa.gov/products/78",
         "quickmap_url": None,
         "terrain_region_id": None,
