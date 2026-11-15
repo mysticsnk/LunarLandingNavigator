@@ -144,8 +144,20 @@ Certificate and hostname verification stay enabled. The published RSS link
 currently serves Atom XML, which the probe handles alongside RSS.
 
 Exit 0 means feed verification completed (including zero relevant entries);
+
+
 exit 1 means verification is incomplete and the report records the actual failure.
 The CSA resource route is implemented; the verification probe remains separate.
 See `docs/integration/STAGE1_BACKEND.md` for job submission, worker recovery and
 integration with the astronomy and map owners. Never store downloaded datasets, secrets,
 virtual environments, caches, frontend dependencies or build output in Git.
+
+## Tools used:
+Antigravity
+Codex
+
+## Nasa sources:
+Quickmap - high resolution lunar imagery
+Moon Trek - lunar terrain data 
+Horizons systems - calculating the angles of sun and earth
+Moon Exploration CSA - past, present and future missions to the moon
