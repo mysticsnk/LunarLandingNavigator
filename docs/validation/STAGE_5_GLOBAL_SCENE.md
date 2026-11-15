@@ -94,7 +94,33 @@ The communication line connects the Earth representation to the selected lunar s
 
 ---
 
-## 5. Verification Results
+---
+
+## 5. Scene Diagnosis & Image 1 vs Image 2 Resolution (Task 1)
+
+### 5.1 Diagnostic Findings for Image 1 (Current Schematic Scene)
+Inspection of the initial workspace state shown in **Image 1** revealed five interrelated root causes:
+1. **Component Role Inversion & Missing Globe Mount:**
+   The primary card was hosting `LunarScene` (the local topocentric ENU scene) rather than `GlobalMoonScene`. When no numerical heightmap DEM was loaded, `LunarScene` rendered schematic axes (RGB) and a circular geometric horizon ring on an empty canvas.
+2. **CSS Grid Breakdown in `App.css`:**
+   At line 17 of `App.css`, Sasha's 3-column workstation layout defined `.grid-content, .visual-grid { display: contents; }` with `grid-template-areas: 'controls global local' 'controls bottom bottom'`. However, lines 226–231 re-declared `.visual-grid { display: grid; grid-template-columns: 1fr 1fr; }`. This override pushed the entire grid into the `global` column, squished both viewports to 340px, and left the `local` area vacant.
+3. **Unobserved Globe Illumination:**
+   Before an observation is computed, `sunPos` is `null`. Without dedicated neutral studio lighting, standard `MeshStandardMaterial` rendered completely black against the dark background.
+4. **Coordinate Grid & Lunar Reference Markings:**
+   The initial procedural canvas lacked the full coordinate reference grid visible in Image 2. Parallels (N 60°, N 30°, 0°, S 30°, S 60°) and meridians (120° W, 60° W, 0°, 60° E, 120° E) with readable degree labels were added.
+5. **Secondary Panel Integration:**
+   In Image 2, the right panel houses both the `Site Inspector` (live/cached metadata) and the `Local Terrain` preview (`LunarScene`). When no DEM is available, an explicit unavailable notice is displayed without replacing the global 3D Moon.
+
+### 5.2 Resolution Implemented
+- In `App.css`, restored `.visual-grid { display: contents; }` so `.visual-card:first-child` occupies `grid-area: global` (dominant viewport) and `.visual-card:nth-child(2)` occupies `grid-area: local`.
+- In `GlobalMoonScene.tsx`, added neutral studio lighting (`ambientLight 0.65` + key directional light + fill light) active whenever `!sunPos`, switching seamlessly to the physical solar beam when ephemeris is available.
+- Added coordinate parallels and meridians to the offline procedural canvas texture with sRGB color space.
+- Added `Focus Site` camera preset, selected site callout badge, and navigation instruction legend matching Image 2 (`CLICK: PIN | DRAG: ROTATE | SCROLL: ZOOM | DOUBLE-CLICK: RECENTER`).
+- In `ObservationWorkspace.tsx`, added `Site Inspector` summary metrics above `LunarScene`, and wrapped 2D map layers in a collapsible drawer.
+
+---
+
+## 6. Verification Results
 
 Run from `frontend/`:
 
@@ -109,8 +135,9 @@ npm.cmd run build
 - **OpenAPI Schema Check (`check:api`):** Synchronized with `contracts/openapi.v1.yaml`.
 - **TypeScript (`typecheck`):** Clean compilation, 0 type errors.
 - **Linter (`oxlint`):** 57 files inspected; 0 errors, 0 warnings.
-- **Test Suite (`vitest`):** 16 test files, **199 of 199 tests passed** (100% pass rate).
-  - `coordinates.test.ts` (39 tests): Includes MCMF basis transformations, reversible ENU-to-MoonFixed mapping, and global scene coordinates.
-  - `GlobalMoonScene.test.tsx` (10 tests): Covers camera presets, site marker interaction, high-latitude mapping, Sun/Earth directions, and communication line states.
+- **Test Suite (`vitest`):** 16 test files, **200 of 200 tests passed** (100% pass rate).
+  - `coordinates.test.ts` (39 tests): MCMF basis transformations, reversible ENU-to-MoonFixed mapping, high-latitude mapping (-89.44° Shackleton), and longitude normalization (222.1° $\to$ -137.9°).
+  - `GlobalMoonScene.test.tsx` (10 tests): Camera presets (Reset, Focus Site, South Pole, Near Side, Far Side), site marker interaction, high-latitude mapping, Sun/Earth directions, and communication line states (active, blocked, loading).
+  - `Scene.test.tsx` (21 tests): Local ENU scene, WebGL error boundary isolation, heightmap mesh rendering, horizon elevation thresholds, and explicit terrain-unavailable notice.
   - `App.test.tsx` (19 tests): Full workspace regression including timeline scrubbing, comparison ranking, and map layer integration.
 - **Production Build (`vite build`):** Clean build, assets compiled into `dist/`.
