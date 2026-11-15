@@ -33,51 +33,57 @@ function createProceduralMoonTexture(): THREE.CanvasTexture {
   const ctx = canvas.getContext('2d')
 
   if (ctx) {
-    // Base lunar highland anorthosite gray
-    ctx.fillStyle = '#8f9299'
+    // Base lunar highland anorthosite silvery-gray
+    ctx.fillStyle = '#adb0b8'
     ctx.fillRect(0, 0, 1024, 512)
 
-    // Darker basaltic maria basins (Oceanus Procellarum, Mare Imbrium, Mare Tranquillitatis)
+    // Surface texture noise / highland variations
+    for (let i = 0; i < 350; i++) {
+      const rx = Math.random() * 1024
+      const ry = Math.random() * 512
+      const rr = 2 + Math.random() * 14
+      ctx.fillStyle = Math.random() > 0.5 ? 'rgba(230, 235, 245, 0.12)' : 'rgba(90, 95, 105, 0.12)'
+      ctx.beginPath()
+      ctx.arc(rx, ry, rr, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    // Darker basaltic maria basins (Oceanus Procellarum, Mare Imbrium, Mare Tranquillitatis, etc.)
     const maria = [
-      { x: 380, y: 190, r: 120, opacity: 0.45 }, // Oceanus Procellarum
-      { x: 470, y: 170, r: 85, opacity: 0.5 },  // Mare Imbrium
-      { x: 500, y: 220, r: 70, opacity: 0.4 },  // Mare Serenitatis
-      { x: 570, y: 240, r: 65, opacity: 0.45 }, // Mare Tranquillitatis
-      { x: 620, y: 230, r: 50, opacity: 0.35 }, // Mare Crisium
-      { x: 440, y: 310, r: 55, opacity: 0.35 }, // Mare Nubium
+      { x: 380, y: 190, r: 130, opacity: 0.65 }, // Oceanus Procellarum
+      { x: 470, y: 165, r: 90, opacity: 0.7 },   // Mare Imbrium
+      { x: 510, y: 215, r: 75, opacity: 0.6 },   // Mare Serenitatis
+      { x: 575, y: 240, r: 70, opacity: 0.65 },  // Mare Tranquillitatis
+      { x: 625, y: 225, r: 55, opacity: 0.6 },   // Mare Crisium
+      { x: 440, y: 310, r: 65, opacity: 0.55 },  // Mare Nubium
+      { x: 470, y: 110, r: 45, opacity: 0.5 },   // Mare Frigoris
+      { x: 610, y: 285, r: 60, opacity: 0.55 },  // Mare Fecunditatis
+      { x: 480, y: 440, r: 110, opacity: 0.4 },  // South Pole-Aitken basin
     ]
 
     for (const m of maria) {
       const grad = ctx.createRadialGradient(m.x, m.y, 10, m.x, m.y, m.r)
-      grad.addColorStop(0, `rgba(45, 48, 56, ${m.opacity})`)
-      grad.addColorStop(0.7, `rgba(60, 64, 72, ${m.opacity * 0.7})`)
-      grad.addColorStop(1, 'rgba(143, 146, 153, 0)')
+      grad.addColorStop(0, `rgba(32, 35, 42, ${m.opacity})`)
+      grad.addColorStop(0.75, `rgba(48, 52, 60, ${m.opacity * 0.75})`)
+      grad.addColorStop(1, 'rgba(173, 176, 184, 0)')
       ctx.fillStyle = grad
       ctx.beginPath()
       ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2)
       ctx.fill()
     }
 
-    // Prominent rayed impact craters (Tycho, Copernicus, Kepler)
+    // Prominent rayed impact craters (Tycho, Copernicus, Kepler, Aristarchus)
     const craters = [
-      { x: 480, y: 360, r: 14, rays: 12, rayLen: 120 }, // Tycho
-      { x: 440, y: 210, r: 12, rays: 8, rayLen: 70 },   // Copernicus
-      { x: 410, y: 220, r: 8, rays: 6, rayLen: 45 },    // Kepler
+      { x: 480, y: 360, r: 16, rays: 16, rayLen: 160 }, // Tycho
+      { x: 440, y: 210, r: 14, rays: 12, rayLen: 90 },  // Copernicus
+      { x: 410, y: 220, r: 10, rays: 8, rayLen: 60 },   // Kepler
+      { x: 385, y: 185, r: 8, rays: 6, rayLen: 45 },    // Aristarchus
     ]
 
     for (const c of craters) {
-      // Crater rim and bright floor
-      ctx.fillStyle = '#dcdfe6'
-      ctx.beginPath()
-      ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.strokeStyle = '#40434a'
-      ctx.lineWidth = 2
-      ctx.stroke()
-
       // Radial ejecta rays
-      ctx.strokeStyle = 'rgba(235, 238, 245, 0.25)'
-      ctx.lineWidth = 1.5
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)'
+      ctx.lineWidth = 1.8
       for (let i = 0; i < c.rays; i++) {
         const angle = (i * Math.PI * 2) / c.rays
         ctx.beginPath()
@@ -88,11 +94,20 @@ function createProceduralMoonTexture(): THREE.CanvasTexture {
         )
         ctx.stroke()
       }
+
+      // Crater rim and bright floor
+      ctx.fillStyle = '#ffffff'
+      ctx.beginPath()
+      ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.strokeStyle = '#25272e'
+      ctx.lineWidth = 2.5
+      ctx.stroke()
     }
 
     // Coordinate grid lines: Parallels (N 60°, N 30°, Equator 0°, S 30°, S 60°)
-    ctx.strokeStyle = 'rgba(120, 180, 240, 0.22)'
-    ctx.lineWidth = 1
+    ctx.strokeStyle = 'rgba(80, 200, 255, 0.42)'
+    ctx.lineWidth = 1.2
     const parallels = [
       { lat: 60, y: 85, label: 'N 60°' },
       { lat: 30, y: 171, label: 'N 30°' },
@@ -123,19 +138,19 @@ function createProceduralMoonTexture(): THREE.CanvasTexture {
     }
 
     // Coordinate text labels
-    ctx.font = '11px sans-serif'
-    ctx.fillStyle = 'rgba(180, 220, 255, 0.55)'
+    ctx.font = 'bold 12px sans-serif'
+    ctx.fillStyle = 'rgba(160, 230, 255, 0.85)'
     ctx.textAlign = 'center'
     ctx.fillText('N 90°', 512, 16)
     ctx.fillText('S 90°', 512, 502)
     for (const p of parallels) {
       ctx.textAlign = 'left'
-      ctx.fillText(p.label, 516, p.y - 4)
+      ctx.fillText(p.label, 518, p.y - 4)
     }
     for (const m of meridians) {
       if (m.lon !== 0) {
         ctx.textAlign = 'center'
-        ctx.fillText(m.label, m.x, 272)
+        ctx.fillText(m.label, m.x, 274)
       }
     }
   }
@@ -365,7 +380,26 @@ const GlobalSceneContent: React.FC<SceneContentProps> = ({
   observationPoint,
   cameraPreset,
 }) => {
-  const moonTexture = useMemo(() => createProceduralMoonTexture(), [])
+  const [moonTexture, setMoonTexture] = useState<THREE.Texture>(() => createProceduralMoonTexture())
+
+  useEffect(() => {
+    // Attempt to load registered high-res LROC WMS texture from backend proxy
+    const loader = new THREE.TextureLoader()
+    loader.load(
+      '/api/v1/map/layers/luna_wac_global/image?bbox=-180,-90,180,90&width=1024&height=512',
+      (texture) => {
+        texture.colorSpace = THREE.SRGBColorSpace
+        texture.wrapS = THREE.RepeatWrapping
+        texture.wrapT = THREE.ClampToEdgeWrapping
+        texture.needsUpdate = true
+        setMoonTexture(texture)
+      },
+      undefined,
+      () => {
+        // Keeps procedural texture on error
+      },
+    )
+  }, [])
 
   // Selected site position in global scene coordinates
   const sitePos = useMemo(() => {
@@ -435,20 +469,20 @@ const GlobalSceneContent: React.FC<SceneContentProps> = ({
       {/* Lighting: Neutral geographic lighting before observation, astronomical directional light after observation */}
       {sunPos ? (
         <>
-          <ambientLight intensity={0.25} color="#dbe2ef" />
+          <ambientLight intensity={0.35} color="#dbe2ef" />
           <directionalLight
             position={sunPos}
-            intensity={2.8}
-            color="#fff8e7"
+            intensity={3.2}
+            color="#fffaf0"
             castShadow
           />
         </>
       ) : (
         <>
           {/* Neutral studio geographic lighting ensuring complete 3D sphere is visible before observation */}
-          <ambientLight intensity={0.65} color="#ffffff" />
-          <directionalLight position={[6, 4, 8]} intensity={1.6} color="#ffffff" />
-          <directionalLight position={[-6, -2, -6]} intensity={0.45} color="#90a0b8" />
+          <ambientLight intensity={0.85} color="#ffffff" />
+          <directionalLight position={[6, 5, 8]} intensity={2.2} color="#ffffff" />
+          <directionalLight position={[-6, -2, -6]} intensity={0.65} color="#b0c4de" />
         </>
       )}
 
@@ -459,10 +493,10 @@ const GlobalSceneContent: React.FC<SceneContentProps> = ({
       >
         <sphereGeometry args={[MOON_RADIUS, 64, 64]} />
         <meshStandardMaterial
-          color="#9da0a8"
+          color="#ffffff"
           map={moonTexture}
-          roughness={0.88}
-          metalness={0.03}
+          roughness={0.82}
+          metalness={0.02}
         />
       </mesh>
 
