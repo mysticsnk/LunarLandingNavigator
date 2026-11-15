@@ -39,6 +39,8 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
   const [comparisonScenarios, setComparisonScenarios] = useState(() => [newComparisonDraft(0), newComparisonDraft(1)])
   const comparisonValidationVersion = useRef(0)
   const comparisonCloseRef = useRef<HTMLButtonElement>(null)
+  const mapLayersDisclosureRef = useRef<HTMLDetailsElement>(null)
+  const ignoreMarkerCoordinateRef = useRef(false)
   const [inspectedComparison, setInspectedComparison] = useState<{ label: string; model: string; dataset: string | null } | null>(null)
   const [category, setCategory] = useState<Site['category'] | ''>('')
   const [siteSearch, setSiteSearch] = useState('')
@@ -71,7 +73,7 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
       ? { latitude: Number(draft.latitude), longitude: Number(draft.longitude) }
       : null, [draft.mode, draft.site, draft.latitude, draft.longitude])
   useEffect(() => {
-    if (draft.horizonMode !== 'terrain' || !coverageCoordinate) {
+    if (!coverageCoordinate) {
       return
     }
     const controller = new AbortController()
@@ -155,10 +157,24 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
     setDraft(next)
   }
 
+  function confirmPointChange() {
+    if (!(observation.result || timeline.result || observation.busy || timeline.busy)) return true
+    return window.confirm('Selecting a new lunar point will clear the current observation or timeline result. Continue?')
+  }
+
+  function selectCatalogSite(site: Site) {
+    if (!confirmPointChange()) return
+    change({ mode: 'catalog', site, latitude: String(site.latitude), longitude: String(site.longitude) })
+  }
+
+  function selectMapCoordinate(value: { latitude: number; longitude: number }) {
+    if (!confirmPointChange()) return
+    change({ mode: 'custom', latitude: String(value.latitude), longitude: String(value.longitude) })
+  }
+
   function selectWorkflow(next: 'now' | 'timeline' | 'comparison') {
     comparisonValidationVersion.current += 1
-    observation.reset()
-    timeline.reset()
+    setLayoutMode('split')
     setValidation(null)
     onWorkflowChange(next)
   }
@@ -241,7 +257,7 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
   const comparisonResult = comparison.result
   const selectedPoint =
     workflow === 'timeline'
-      ? timelineResult?.points[playback.activeIndex] ?? null
+      ? timelineResult?.points[playback.activeIndex] ?? observation.result?.point ?? null
       : workflow === 'now' ? result?.point ?? null : null
   const activeJob = workflow === 'timeline' ? timeline : workflow === 'comparison' ? comparison : observation
   const busy = activeJob.busy
@@ -273,6 +289,9 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
     loading: isTerrainLoading,
     error: terrainError,
   } = useHeightmap(terrainRegionId)
+  const terrainPreviewSite = catalog?.items.find(
+    (site) => site.terrain_region_id && site.id !== activeCatalogSite?.id,
+  )
   const coordinate = displayedSite
     ? { latitude: displayedSite.latitude, longitude: displayedSite.longitude }
     : draft.mode === 'catalog'
@@ -297,11 +316,12 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
           Choose a location and a UTC {workflow === 'timeline' ? 'period' : 'instant'} to inspect Sun and Earth visibility.
         </p>
       </div>
-      <div className={`main-grid${workflow === 'comparison' ? ' comparison-active' : ''}`}>
+      <div className={`main-grid${workflow === 'comparison' ? ' comparison-active' : ''}${layoutMode === 'split' ? '' : ` expanded-${layoutMode.slice('enlarge-'.length)}`}`}>
+        {workflow === 'comparison' && <button type="button" className="comparison-backdrop" aria-label="Close comparison builder" onClick={onCloseComparison} />}
         <nav className="activity-rail" aria-label="Workstation sections">
           <button type="button" aria-label="Landing sites" title="Landing sites" onClick={() => document.getElementById('landing-sites')?.scrollIntoView({ block: 'start' })}>⌖</button>
           <button type="button" aria-label="Timeline analysis" title="Timeline analysis" onClick={() => selectWorkflow('timeline')}>∿</button>
-          <button type="button" aria-label="Global Moon layers" title="Global Moon layers" onClick={() => document.getElementById('map-heading')?.scrollIntoView({ block: 'center' })}>▱</button>
+          <button type="button" aria-label="Global Moon layers" title="Global Moon layers" onClick={() => { setLayoutMode('split'); if (mapLayersDisclosureRef.current) mapLayersDisclosureRef.current.open = true }}>▱</button>
           <button type="button" aria-label="Comparison builder" title="Comparison builder" onClick={onOpenComparison}>⚖</button>
         </nav>
         <aside className="grid-sidebar">
@@ -311,7 +331,7 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
             role={workflow === 'comparison' ? 'dialog' : undefined}
             aria-modal={workflow === 'comparison' ? true : undefined}
           >
-            <div className="card-heading"><h2 id="scenario-heading">{workflow === 'comparison' ? 'Compare sites' : 'Landing sites & analysis'}</h2>{workflow === 'comparison' && <button ref={comparisonCloseRef} type="button" className="secondary-button" onClick={onCloseComparison}>Close</button>}</div>
+            <div className="card-heading"><h2 id="scenario-heading">{workflow === 'comparison' ? 'Compare sites' : 'Landing sites'}</h2>{workflow === 'comparison' && <button ref={comparisonCloseRef} type="button" className="secondary-button" onClick={onCloseComparison}>Close</button>}</div>
             <form onSubmit={submit} noValidate>
               <fieldset hidden={workflow === 'comparison'}>
                 <legend>Analysis</legend>
@@ -358,7 +378,7 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
                         </button>
                       </>
                     )}
-                    <div className="site-card-list" role="listbox" aria-label="Landing sites" id="landing-sites">{(catalog?.items ?? []).filter((site) => `${site.name} ${site.description}`.toLowerCase().includes(siteSearch.trim().toLowerCase())).map((site) => <button type="button" role="option" aria-selected={draft.site?.id === site.id} className={`site-choice${draft.site?.id === site.id ? ' selected' : ''}`} key={site.id} onClick={() => change({ site })}><span className="site-dot" aria-hidden="true"/><span><strong>{site.name}</strong><small>{site.category.toUpperCase()} · {site.latitude.toFixed(2)}°, {site.longitude.toFixed(2)}°E</small></span><span aria-hidden="true">⋮</span></button>)}{catalog && !catalog.items.length && <p className="muted">No catalog sites are available.</p>}</div>
+                    <div className="site-card-list" role="listbox" aria-label="Landing sites" id="landing-sites">{(catalog?.items ?? []).filter((site) => `${site.name} ${site.description}`.toLowerCase().includes(siteSearch.trim().toLowerCase())).map((site) => <button type="button" role="option" aria-selected={draft.site?.id === site.id} className={`site-choice${draft.site?.id === site.id ? ' selected' : ''}`} key={site.id} onClick={() => selectCatalogSite(site)}><span className="site-dot" aria-hidden="true"/><span><strong>{site.name}</strong><small>{site.category.toUpperCase()} · {site.latitude.toFixed(2)}°, {site.longitude.toFixed(2)}°E</small></span><span aria-hidden="true">⋮</span></button>)}{catalog && !catalog.items.length && <p className="muted">No catalog sites are available.</p>}</div>
                     {catalog && (
                       <div className="pagination">
                         <small>
@@ -550,7 +570,7 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
                 {draft.horizonMode === 'terrain' && <p role={coverageState === 'error' || coverageState === 'unsupported' ? 'alert' : 'status'} className="field-help">
                   {coverageState === 'checking' && 'Checking terrain coverage…'}
                   {coverageState === 'supported' && `Terrain supported${coverage?.dataset_id ? ` · ${coverage.dataset_id}` : ''}${coverage?.resolution_m != null ? ` · ${coverage.resolution_m} m` : ''}`}
-                  {coverageState === 'unsupported' && `Terrain unavailable${coverage?.reason ? `: ${coverage.reason}` : ''}. Choose geometric mode explicitly to continue.`}
+                  {coverageState === 'unsupported' && `Terrain unavailable${coverage?.reason ? `: ${coverage.reason}` : ''}. This point has no usable elevation data. Choose geometric mode explicitly to continue.`}
                   {coverageState === 'error' && 'Terrain coverage check failed. Retry by changing the location or mode.'}
                   {coverageState === 'idle' && 'Select a valid location to check terrain coverage.'}
                 </p>}
@@ -613,11 +633,10 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
           </details>
         </aside>
         <div className="grid-content">
-          <div className="visual-grid" data-layout-mode={layoutMode}>
+          <div className="visual-grid">
             <section
               className={`workspace-card visual-card ${layoutMode === 'enlarge-global' ? 'visual-card-enlarged' : ''}`}
               aria-labelledby="map-heading"
-              style={layoutMode === 'enlarge-global' ? { gridColumn: '1 / -1' } : undefined}
             >
               <div className="card-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h2 id="map-heading">Global Moon view</h2>
@@ -633,93 +652,74 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
                 </button>
               </div>
               <p className="muted">
-                Complete spherical Moon in MCMF coordinates with active Earth communication link · drag to orbit, scroll to zoom.
+                Global color mosaic only; no global numerical elevation model is provisioned · select a supported site for real local DEM relief · drag to orbit, scroll to zoom.
               </p>
 
-              {/* 3D Global Moon Viewport (Dominant Stage 5 view) */}
+              {/* Global Moon viewport */}
               <div
                 className="map-viewport"
                 data-testid="global-moon-viewport"
-                style={{
-                  height: layoutMode === 'enlarge-global' ? '520px' : '360px',
-                  marginBottom: '10px',
-                }}
               >
                 <GlobalMoonScene
                   catalogSites={catalog?.items}
                   selectedSite={effectiveSite}
                   selectedCoordinate={coordinate || null}
                   observationPoint={selectedPoint}
-                  isLoading={busy}
+                  isLoading={workflow === 'now' && observation.busy}
                   dataStatus={(workflow === 'timeline' ? timelineResult?.meta.data_status : result?.meta.data_status) ?? null}
-                  onSelectCoordinate={(val) =>
-                    change({
-                      mode: 'custom',
-                      latitude: String(val.latitude),
-                      longitude: String(val.longitude),
-                    })
-                  }
+                  onSelectCoordinate={(val) => {
+                    if (ignoreMarkerCoordinateRef.current) {
+                      ignoreMarkerCoordinateRef.current = false
+                      return
+                    }
+                    selectMapCoordinate(val)
+                  }}
                   onSelectSite={(site) => {
-                    change({
-                      mode: 'catalog',
-                      site,
-                      latitude: String(site.latitude),
-                      longitude: String(site.longitude),
-                    })
+                    ignoreMarkerCoordinateRef.current = true
+                    selectCatalogSite(site)
                   }}
                 />
               </div>
 
-              {/* Registered 2D Layer Map with Layer Switching */}
-              {!mapLayers && !mapError && (
-                <p role="status">Loading map layers...</p>
-              )}
-              {mapError && <RequestError error={mapError} />}
-              {mapLayers?.items.length === 0 && (
-                <p>No registered map layers are available.</p>
-              )}
-              {mapError && (
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => {
-                    setMapError(null)
-                    setMapAttempt((value) => value + 1)
-                  }}
-                >
-                  Retry map layers
-                </button>
-              )}
-              {!!mapLayers?.items.length && (
-                <details className="layer-map-drawer" style={{ marginTop: '8px' }}>
-                  <summary style={{ cursor: 'pointer', fontSize: '0.75rem', color: '#a0a5b5', padding: '4px 0' }}>
-                    2D Projections & Map Layers (LROC / Moon Trek)
-                  </summary>
-                  <div style={{ marginTop: '6px' }}>
+              <details className="layer-map-drawer" ref={mapLayersDisclosureRef}>
+                <summary>
+                  Registered map layers (Moon Trek / LROC)
+                  {mapError ? ' · unavailable' : !mapLayers ? ' · loading' : ''}
+                </summary>
+                <div className="layer-map-drawer-content">
+                  {!mapLayers && !mapError && <p role="status">Loading map layers...</p>}
+                  {mapError && <RequestError error={mapError} />}
+                  {mapLayers?.items.length === 0 && <p>No registered map layers are available.</p>}
+                  {mapError && (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => {
+                        setMapError(null)
+                        setMapAttempt((value) => value + 1)
+                      }}
+                    >
+                      Retry map layers
+                    </button>
+                  )}
+                  {!!mapLayers?.items.length && (
                     <LunarMap
                       layers={mapLayers.items}
                       quickmapUrl={activeCatalogSite?.quickmap_url ?? null}
                       selectedCoordinate={coordinate || null}
                       selectedSiteId={displayedSite?.site_id ?? (draft.mode === 'catalog' ? draft.site?.id : null)}
-                      onSelectCoordinate={(value) =>
-                        change({
-                          mode: 'custom',
-                          latitude: String(value.latitude),
-                          longitude: String(value.longitude),
-                        })
-                      }
+                      onSelectCoordinate={selectMapCoordinate}
                     />
-                  </div>
-                </details>
-              )}
+                  )}
+                </div>
+              </details>
               <p className="field-help">
-                Spherical MCMF frame with authoritative Earth/Sun vectors and communication line. Registered Moon Trek / LROC imagery below.
+                Global reference view · site markers use the catalog coordinate frame.
               </p>
             </section>
             <section
               className={`workspace-card visual-card ${layoutMode === 'enlarge-local' ? 'visual-card-enlarged' : ''}`}
               aria-labelledby="scene-heading"
-              style={layoutMode === 'enlarge-local' ? { gridColumn: '1 / -1' } : undefined}
             >
               <div className="card-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h2 id="scene-heading">Local terrain inspector</h2>
@@ -738,14 +738,11 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
               {/* Site Inspector Summary Panel matching Image 2 */}
 
               <p className="muted">
-                Schematic local ENU scene · directions from the observation API.
+                {heightmap
+                  ? `LOLA DEM · ${heightmap.spacing_m} m grid · 5× display relief · drag to rotate and scroll to zoom.`
+                  : 'Local DEM relief appears when the API provides terrain coverage for this location.'}
               </p>
-              <div
-                className="scene-viewport"
-                style={{
-                  height: layoutMode === 'enlarge-local' ? '560px' : undefined,
-                }}
-              >
+              <div className="scene-viewport">
                 <LunarScene
                   observationPoint={selectedPoint}
                   site={effectiveSite}
@@ -756,12 +753,25 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
                   horizonMode={(workflow === 'comparison' ? comparisonResult?.meta.horizon_mode : workflow === 'timeline' ? timelineResult?.meta.horizon_mode : result?.meta.horizon_mode) ?? draft.horizonMode}
                   terrainDatasetId={(workflow === 'comparison' ? comparisonResult?.ranked_scenarios[0]?.provenance.terrain_dataset_id : workflow === 'timeline' ? timelineResult?.meta.terrain_dataset_id : result?.meta.terrain_dataset_id) ?? null}
                   visibilityMarginDeg={workflow === 'comparison' ? comparison.resultRequest?.visibility_margin_deg : workflow === 'now' && result ? observation.resultRequest?.visibility_margin_deg : Number(draft.margin)}
-                  isLoading={busy}
+                  isLoading={workflow === 'now' && observation.busy}
                   heightmap={heightmap}
+                  visualExaggeration={5}
                   isTerrainLoading={isTerrainLoading}
                   terrainError={terrainError}
                 />
               </div>
+              {!heightmap && !isTerrainLoading && !terrainRegionId && terrainPreviewSite && (
+                <div className="terrain-preview-action" role="status">
+                  <span>Numerical terrain coverage is not selected.</span>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => selectCatalogSite(terrainPreviewSite)}
+                  >
+                    Preview {terrainPreviewSite.name}
+                  </button>
+                </div>
+              )}
               <p className="field-help">
                 Marker distances are for display; terrain mesh shows local numerical geometry when available.
               </p>

@@ -1,9 +1,10 @@
-import React, { Suspense, useMemo } from 'react'
-import { Canvas } from '@react-three/fiber'
+import React, { Suspense, useEffect, useMemo, useRef } from 'react'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { enuToLocalScene, isValidDirectionVector } from '../../lib/coordinates'
 import { SceneErrorBoundary } from './SceneErrorBoundary'
-import { buildTerrainGeometry, getLocalSurfaceElevationAtOrigin } from './terrainMesh'
+import { buildTerrainGeometry, getLocalSurfaceElevationAtOrigin, getTerrainCameraFrame } from './terrainMesh'
 import type { LunarSceneProps } from './types'
 
 /**
@@ -11,6 +12,40 @@ import type { LunarSceneProps } from './types'
  * Kept strictly separated from physical coordinates.
  */
 const DEFAULT_VISUAL_DISTANCE = 8.0
+
+const LocalCameraControls: React.FC<{ terrainGeometry: THREE.BufferGeometry | null }> = ({ terrainGeometry }) => {
+  const { camera, gl, size } = useThree()
+  const cameraRef = useRef(camera)
+  const controlsRef = useRef<OrbitControls | null>(null)
+
+  useEffect(() => {
+    const controls = new OrbitControls(camera, gl.domElement)
+    controls.enableDamping = true
+    controls.dampingFactor = 0.08
+    controls.minDistance = 2.5
+    controlsRef.current = controls
+    return () => controls.dispose()
+  }, [camera, gl])
+
+  useEffect(() => {
+    const activeCamera = cameraRef.current
+    if (!terrainGeometry || size.width <= 0 || size.height <= 0 || !(activeCamera instanceof THREE.PerspectiveCamera)) return
+    const controls = controlsRef.current
+    if (!controls) return
+
+    const frame = getTerrainCameraFrame(terrainGeometry, activeCamera.fov, size.width / size.height)
+    controls.target.copy(frame.center)
+    controls.maxDistance = Math.max(40, frame.distance * 3)
+    activeCamera.position.copy(frame.center).addScaledVector(frame.direction, frame.distance)
+    activeCamera.near = Math.max(0.01, frame.distance / 100)
+    activeCamera.far = frame.distance * 4
+    activeCamera.updateProjectionMatrix()
+    controls.update()
+  }, [camera, size.height, size.width, terrainGeometry])
+
+  useFrame(() => controlsRef.current?.update())
+  return null
+}
 
 /**
  * Local 3D coordinate axes:
@@ -192,56 +227,47 @@ const SceneContent: React.FC<{
   earthDirection: { x: number; y: number; z: number } | null
   observerHeightM: number
   visualScale: number
-  heightmap?: LunarSceneProps['heightmap']
-  visualExaggeration?: number
+  terrainGeometry: THREE.BufferGeometry | null
+  observerSceneY: number
 }> = ({
   sunDirection,
   earthDirection,
   observerHeightM,
   visualScale,
-  heightmap,
-  visualExaggeration = 1.0,
+  terrainGeometry,
+  observerSceneY,
 }) => {
   const distance = DEFAULT_VISUAL_DISTANCE * visualScale
 
-  // Compute terrain mesh geometry if heightmap is supplied
-  const { terrainGeometry, wireframeGeometry, observerSceneY } = useMemo(() => {
-    if (!heightmap) {
-      return { terrainGeometry: null, wireframeGeometry: null, observerSceneY: 0 }
-    }
-    const maxPhysicalSpan = Math.max(
-      heightmap.width * heightmap.spacing_m,
-      heightmap.height * heightmap.spacing_m,
-    )
-    const scale = maxPhysicalSpan > 0 ? 12.0 / maxPhysicalSpan : 1.0
-    const geo = buildTerrainGeometry(heightmap, { scale, exaggeration: visualExaggeration })
-    const wireGeo = new THREE.WireframeGeometry(geo)
-    const surfElev = getLocalSurfaceElevationAtOrigin(heightmap)
-    const obsY = (surfElev * visualExaggeration + observerHeightM) * scale
-    return { terrainGeometry: geo, wireframeGeometry: wireGeo, observerSceneY: obsY }
-  }, [heightmap, observerHeightM, visualExaggeration])
-
   return (
     <>
-      <ambientLight intensity={0.4} />
-      <directionalLight position={[10, 20, 10]} intensity={0.8} />
+      <ambientLight intensity={sunDirection ? 0.18 : 0.4} />
+      <directionalLight
+        position={sunDirection ? [sunDirection.x * 20, sunDirection.y * 20, sunDirection.z * 20] : [10, 20, 10]}
+        intensity={sunDirection ? 1.8 : 0.8}
+        castShadow
+        shadow-mapSize-width={2048}
+        shadow-mapSize-height={2048}
+        shadow-camera-left={-10}
+        shadow-camera-right={10}
+        shadow-camera-top={10}
+        shadow-camera-bottom={-10}
+        shadow-camera-far={40}
+        shadow-bias={-0.0001}
+        shadow-normalBias={0.02}
+      />
 
-      <LocalAxes length={5} />
+      {!terrainGeometry && <LocalAxes length={5} />}
       {terrainGeometry ? (
         <group data-testid="terrain-mesh-group">
           <mesh geometry={terrainGeometry} receiveShadow castShadow>
             <meshStandardMaterial
-              color="#3a3c46"
-              roughness={0.85}
-              metalness={0.1}
+              color="#a2a5ab"
+              roughness={0.96}
+              metalness={0}
               side={THREE.DoubleSide}
             />
           </mesh>
-          {wireframeGeometry && (
-            <lineSegments geometry={wireframeGeometry}>
-              <lineBasicMaterial color="#5a5e70" transparent opacity={0.2} />
-            </lineSegments>
-          )}
         </group>
       ) : (
         <GeometricHorizonReference radius={6} />
@@ -327,6 +353,21 @@ export const LunarScene: React.FC<LunarSceneProps> = (props) => {
       return null
     return enuToLocalScene(effectiveEarthEnu)
   }, [effectiveEarthEnu])
+
+  const { terrainGeometry, observerSceneY } = useMemo(() => {
+    if (!heightmap) return { terrainGeometry: null, observerSceneY: 0 }
+    const maxPhysicalSpan = Math.max(
+      heightmap.width * heightmap.spacing_m,
+      heightmap.height * heightmap.spacing_m,
+    )
+    const scale = maxPhysicalSpan > 0 ? 12.0 / maxPhysicalSpan : 1.0
+    const geometry = buildTerrainGeometry(heightmap, { scale, exaggeration: visualExaggeration })
+    const surfaceElevation = getLocalSurfaceElevationAtOrigin(heightmap)
+    return {
+      terrainGeometry: geometry,
+      observerSceneY: (surfaceElevation * visualExaggeration + observerHeightM) * scale,
+    }
+  }, [heightmap, observerHeightM, visualExaggeration])
 
   // Scientific labels and flags come only from the observation response.
   const sunAngles = observationPoint
@@ -467,16 +508,18 @@ export const LunarScene: React.FC<LunarSceneProps> = (props) => {
           >
             <Canvas
               camera={{ position: [8, 7, 12], fov: 45 }}
+              shadows
               style={{ width: '100%', height: '100%' }}
               data-testid="lunar-scene-canvas"
             >
+              <LocalCameraControls terrainGeometry={terrainGeometry} />
               <SceneContent
                 sunDirection={validSunScene}
                 earthDirection={validEarthScene}
                 observerHeightM={observerHeightM}
                 visualScale={visualScale}
-                heightmap={heightmap}
-                visualExaggeration={visualExaggeration}
+                terrainGeometry={terrainGeometry}
+                observerSceneY={observerSceneY}
               />
             </Canvas>
           </Suspense>

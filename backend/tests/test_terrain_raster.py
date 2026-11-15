@@ -62,6 +62,20 @@ def test_geotiff_reader_bilinearly_samples_float32_values_and_closes(tmp_path):
         assert source.resolution_m == 20.0
 
 
+def test_geotiff_batch_sampling_matches_scalar_sampling(tmp_path):
+    path = tmp_path / "controlled.tif"
+    write_raster(
+        path, [[0, 10, 20, 30], [40, 50, 60, 70], [80, 90, 100, 110], [120, 130, 140, 150]]
+    )
+    coordinates = [location_at_pixel_center(1, 1), location_at_pixel_center(1.5, 1.5)]
+
+    with terrain_source(path) as source:
+        assert source.sample_many(
+            [latitude for latitude, _ in coordinates],
+            [longitude for _, longitude in coordinates],
+        ) == pytest.approx([source.sample(*coordinate) for coordinate in coordinates])
+
+
 def test_geotiff_reader_rejects_no_data_and_outside_coverage(tmp_path):
     path = tmp_path / "controlled.tif"
     write_raster(path, [[1, 2, 3, 4], [5, -9999, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16]])
@@ -70,9 +84,18 @@ def test_geotiff_reader_rejects_no_data_and_outside_coverage(tmp_path):
             source.sample(*location_at_pixel_center(1, 1))
         assert no_data.value.reason == "no_data"
 
+        latitude, longitude = location_at_pixel_center(1, 1)
+        with pytest.raises(TerrainDataError, match="no-data") as batch_no_data:
+            source.sample_many([latitude], [longitude])
+        assert batch_no_data.value.reason == "no_data"
+
         with pytest.raises(TerrainDataError) as outside:
             source.sample(-30.0, 0.0)
         assert outside.value.reason == "outside_coverage"
+
+        with pytest.raises(TerrainDataError) as batch_outside:
+            source.sample_many([-30.0], [0.0])
+        assert batch_outside.value.reason == "outside_coverage"
 
 
 def test_geotiff_reader_rejects_an_unagreed_reference_frame(tmp_path):

@@ -35,10 +35,10 @@ def build_heightmap(region, terrain_source):
         -math.sin(latitude_rad) * math.sin(longitude_rad),
         math.cos(latitude_rad),
     )
-    origin_elevation = terrain_source.sample(latitude, longitude)
-    origin_position = tuple(value * (MOON_REFERENCE_RADIUS_M + origin_elevation) for value in up)
     width = height = intervals + 1
-    elevations = []
+    target_ups = []
+    sample_latitudes = []
+    sample_longitudes = []
     for row in range(height):
         north_m = -half_extent + row * spacing
         for col in range(width):
@@ -62,12 +62,31 @@ def build_heightmap(region, terrain_source):
                 sample_longitude = normalize_longitude_exact(
                     math.degrees(math.atan2(target_up[1], target_up[0]))
                 )
-            surface_elevation = terrain_source.sample(sample_latitude, sample_longitude)
-            position = tuple(
-                value * (MOON_REFERENCE_RADIUS_M + surface_elevation) for value in target_up
+            target_ups.append(target_up)
+            sample_latitudes.append(sample_latitude)
+            sample_longitudes.append(sample_longitude)
+
+    sample_many = getattr(terrain_source, "sample_many", None)
+    surface_elevations = (
+        sample_many(sample_latitudes, sample_longitudes)
+        if sample_many
+        else [
+            terrain_source.sample(sample_latitude, sample_longitude)
+            for sample_latitude, sample_longitude in zip(
+                sample_latitudes, sample_longitudes, strict=True
             )
-            delta = tuple(position[index] - origin_position[index] for index in range(3))
-            elevations.append(sum(delta[index] * up[index] for index in range(3)))
+        ]
+    )
+    origin_index = (height // 2) * width + width // 2
+    origin_elevation = surface_elevations[origin_index]
+    origin_position = tuple(value * (MOON_REFERENCE_RADIUS_M + origin_elevation) for value in up)
+    elevations = []
+    for target_up, surface_elevation in zip(target_ups, surface_elevations, strict=True):
+        position = tuple(
+            value * (MOON_REFERENCE_RADIUS_M + surface_elevation) for value in target_up
+        )
+        delta = tuple(position[index] - origin_position[index] for index in range(3))
+        elevations.append(sum(delta[index] * up[index] for index in range(3)))
 
     return {
         "region_id": region["region_id"],
