@@ -17,7 +17,6 @@ import { useTimeline } from './useTimeline'
 import { useTimelinePlayback } from './useTimelinePlayback'
 import { TimelineAnalytics } from './TimelineAnalytics'
 import { ObservationResult } from './ObservationResult'
-import { CSAResources } from '../resources/CSAResources'
 import { HealthCard } from '../health/HealthCard'
 import { useComparison } from '../comparison/useComparison'
 import { buildComparisonRequest, newComparisonDraft } from './scenario'
@@ -33,13 +32,16 @@ const phases = {
   error: 'Request could not be completed',
 }
 
-export function ObservationWorkspace() {
+export type ObservationWorkflow = 'now' | 'timeline' | 'comparison'
+
+export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenComparison, onCloseComparison }: { workflow: ObservationWorkflow; onWorkflowChange: (workflow: ObservationWorkflow) => void; onOpenComparison: () => void; onCloseComparison: () => void }) {
   const [draft, setDraft] = useState(initialScenario)
-  const [workflow, setWorkflow] = useState<'now' | 'timeline' | 'comparison'>('now')
   const [comparisonScenarios, setComparisonScenarios] = useState(() => [newComparisonDraft(0), newComparisonDraft(1)])
   const comparisonValidationVersion = useRef(0)
+  const comparisonCloseRef = useRef<HTMLButtonElement>(null)
   const [inspectedComparison, setInspectedComparison] = useState<{ label: string; model: string; dataset: string | null } | null>(null)
   const [category, setCategory] = useState<Site['category'] | ''>('')
+  const [siteSearch, setSiteSearch] = useState('')
   const [offset, setOffset] = useState(0)
   const [catalog, setCatalog] = useState<SiteList | null>(null)
   const [catalogError, setCatalogError] = useState<ApiClientError | null>(null)
@@ -51,6 +53,14 @@ export function ObservationWorkspace() {
   const timeline = useTimeline()
   const comparison = useComparison()
   const playback = useTimelinePlayback(timeline.result)
+
+  useEffect(() => {
+    if (workflow !== 'comparison') return
+    comparisonCloseRef.current?.focus()
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onCloseComparison() }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [workflow, onCloseComparison])
 
   const coverageCoordinate = useMemo(() => draft.mode === 'catalog' && draft.site
     ? { latitude: draft.site.latitude, longitude: draft.site.longitude }
@@ -149,7 +159,7 @@ export function ObservationWorkspace() {
     observation.reset()
     timeline.reset()
     setValidation(null)
-    setWorkflow(next)
+    onWorkflowChange(next)
   }
 
   function submit(event: FormEvent) {
@@ -216,7 +226,7 @@ export function ObservationWorkspace() {
     setCoverage(null)
     setCoverageState(frozen.horizon_mode === 'terrain' ? 'checking' : 'idle')
     setDraft(nextDraft)
-    setWorkflow('timeline')
+    onWorkflowChange('timeline')
     setInspectedComparison({ label, model: comparison.result!.meta.model_version, dataset: comparison.result!.meta.terrain_dataset_id })
     void timeline.submit(request)
   }
@@ -282,15 +292,23 @@ export function ObservationWorkspace() {
           Choose a location and a UTC {workflow === 'timeline' ? 'period' : 'instant'} to inspect Sun and Earth visibility.
         </p>
       </div>
-      <div className="main-grid">
+      <div className={`main-grid${workflow === 'comparison' ? ' comparison-active' : ''}`}>
+        <nav className="activity-rail" aria-label="Workstation sections">
+          <button type="button" aria-label="Landing sites" title="Landing sites" onClick={() => document.getElementById('landing-sites')?.scrollIntoView({ block: 'start' })}>⌖</button>
+          <button type="button" aria-label="Timeline analysis" title="Timeline analysis" onClick={() => selectWorkflow('timeline')}>∿</button>
+          <button type="button" aria-label="Global Moon layers" title="Global Moon layers" onClick={() => document.getElementById('map-heading')?.scrollIntoView({ block: 'center' })}>▱</button>
+          <button type="button" aria-label="Comparison builder" title="Comparison builder" onClick={onOpenComparison}>⚖</button>
+        </nav>
         <aside className="grid-sidebar">
           <section
             className="workspace-card"
             aria-labelledby="scenario-heading"
+            role={workflow === 'comparison' ? 'dialog' : undefined}
+            aria-modal={workflow === 'comparison' ? true : undefined}
           >
-            <h2 id="scenario-heading">Observation setup</h2>
+            <div className="card-heading"><h2 id="scenario-heading">{workflow === 'comparison' ? 'Compare sites' : 'Landing sites & analysis'}</h2>{workflow === 'comparison' && <button ref={comparisonCloseRef} type="button" className="secondary-button" onClick={onCloseComparison}>Close</button>}</div>
             <form onSubmit={submit} noValidate>
-              <fieldset>
+              <fieldset hidden={workflow === 'comparison'}>
                 <legend>Analysis</legend>
                 <div className="mode-switch">
                   <label>
@@ -311,58 +329,15 @@ export function ObservationWorkspace() {
                     />{' '}
                     Timeline
                   </label>
-                  <label>
-                    <input type="radio" name="analysis-mode" checked={workflow === 'comparison'} onChange={() => selectWorkflow('comparison')} />{' '}
-                    Compare scenarios
-                  </label>
                 </div>
               </fieldset>
               <fieldset hidden={workflow === 'comparison'}>
                 <legend>Location</legend>
-                <div className="mode-switch">
-                  <label>
-                    <input
-                      type="radio"
-                      name="site-mode"
-                      checked={draft.mode === 'catalog'}
-                      onChange={() => change({ mode: 'catalog' })}
-                    />{' '}
-                    Catalog
-                  </label>
-                  <label>
-                    <input
-                      type="radio"
-                      name="site-mode"
-                      checked={draft.mode === 'custom'}
-                      onChange={() => change({ mode: 'custom' })}
-                    />{' '}
-                    Custom coordinates
-                  </label>
-                </div>
+                <div className="segmented-control" role="group" aria-label="Location mode"><button type="button" aria-pressed={draft.mode === 'catalog'} onClick={() => change({ mode: 'catalog' })}>Catalog</button><button type="button" aria-pressed={draft.mode === 'custom'} onClick={() => change({ mode: 'custom' })}>Custom coords</button></div>
                 {draft.mode === 'catalog' ? (
                   <>
-                    <label className="field">
-                      Category
-                      <select
-                        value={category}
-                        onChange={(event) => {
-                          reloadCatalog(
-                            event.target.value as typeof category,
-                            0,
-                          )
-                          change({ site: null })
-                        }}
-                      >
-                        <option value="">All categories</option>
-                        {['artemis', 'apollo', 'clps', 'international'].map(
-                          (value) => (
-                            <option key={value} value={value}>
-                              {value.toUpperCase()}
-                            </option>
-                          ),
-                        )}
-                      </select>
-                    </label>
+                    <div className="category-filters" role="group" aria-label="Site category">{[['', 'All'], ['artemis', 'Artemis'], ['apollo', 'Apollo'], ['clps', 'CLPS'], ['international', 'International']].map(([value, label]) => <button key={value} type="button" aria-pressed={category === value} onClick={() => { reloadCatalog(value as typeof category, 0); change({ site: null }) }}>{label}</button>)}</div>
+                    <label className="site-search"><span className="sr-only">Search landing sites</span><span aria-hidden="true">⌕</span><input type="search" placeholder="Search loaded sites…" value={siteSearch} onChange={(event) => setSiteSearch(event.target.value)} /></label>
                     {!catalog && !catalogError && (
                       <p role="status">Loading site catalog…</p>
                     )}
@@ -378,36 +353,7 @@ export function ObservationWorkspace() {
                         </button>
                       </>
                     )}
-                    <label className="field">
-                      Catalog site
-                      <select
-                        value={draft.site?.id ?? ''}
-                        disabled={!catalog}
-                        onChange={(event) =>
-                          change({
-                            site:
-                              catalog?.items.find(
-                                (site) => site.id === event.target.value,
-                              ) ?? null,
-                          })
-                        }
-                      >
-                        <option value="">Choose a site</option>
-                        {draft.site &&
-                          !catalog?.items.some(
-                            (site) => site.id === draft.site?.id,
-                          ) && (
-                            <option value={draft.site.id}>
-                              {draft.site.name}
-                            </option>
-                          )}
-                        {catalog?.items.map((site) => (
-                          <option key={site.id} value={site.id}>
-                            {site.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    <div className="site-card-list" role="listbox" aria-label="Landing sites" id="landing-sites">{(catalog?.items ?? []).filter((site) => `${site.name} ${site.description}`.toLowerCase().includes(siteSearch.trim().toLowerCase())).map((site) => <button type="button" role="option" aria-selected={draft.site?.id === site.id} className={`site-choice${draft.site?.id === site.id ? ' selected' : ''}`} key={site.id} onClick={() => change({ site })}><span className="site-dot" aria-hidden="true"/><span><strong>{site.name}</strong><small>{site.category.toUpperCase()} · {site.latitude.toFixed(2)}°, {site.longitude.toFixed(2)}°E</small></span><span aria-hidden="true">⋮</span></button>)}{catalog && !catalog.items.length && <p className="muted">No catalog sites are available.</p>}</div>
                     {catalog && (
                       <div className="pagination">
                         <small>
@@ -561,7 +507,9 @@ export function ObservationWorkspace() {
                     </label>
                   </div>
                 )}
-                <div className="field-pair">
+                <details className="advanced-settings">
+                  <summary>Observer & visibility settings</summary>
+                  <div className="field-pair">
                   <label className="field">
                     Observer height (m)
                     <input
@@ -588,16 +536,12 @@ export function ObservationWorkspace() {
                       }
                     />
                   </label>
-                </div>
+                  </div>
+                </details>
                 <p className="field-help">
                   Geometric mode uses the local reference horizon. Terrain mode uses prepared elevation data; the scene mesh is for display.
                 </p>
-                <label className="field">
-                  Horizon mode
-                  <select aria-label="Horizon mode" value={draft.horizonMode} onChange={(event) => change({ horizonMode: event.target.value as ScenarioDraft['horizonMode'] })}>
-                    <option value="geometric">Geometric</option><option value="terrain">Terrain-aware</option>
-                  </select>
-                </label>
+                <div className="horizon-control" role="group" aria-label="Horizon mode"><span>Horizon mode</span><div className="segmented-control"><button type="button" aria-pressed={draft.horizonMode === 'geometric'} onClick={() => change({ horizonMode: 'geometric' })}>Geometric</button><button type="button" aria-pressed={draft.horizonMode === 'terrain'} onClick={() => change({ horizonMode: 'terrain' })}>Terrain</button></div></div>
                 {draft.horizonMode === 'terrain' && <p role={coverageState === 'error' || coverageState === 'unsupported' ? 'alert' : 'status'} className="field-help">
                   {coverageState === 'checking' && 'Checking terrain coverage…'}
                   {coverageState === 'supported' && `Terrain supported${coverage?.dataset_id ? ` · ${coverage.dataset_id}` : ''}${coverage?.resolution_m != null ? ` · ${coverage.resolution_m} m` : ''}`}
@@ -744,6 +688,13 @@ export function ObservationWorkspace() {
               </p>
             </section>
           </div>
+          <section className="workspace-card observation-inspector" aria-label="Site inspector">
+            {workflow === 'now'
+              ? <ObservationResult result={result} request={observation.resultRequest} coverage={observation.resultCoverage} />
+              : workflow === 'timeline'
+                ? <><div className="card-heading"><h2>Site inspector</h2>{timelineResult && <span className={`data-badge ${timelineResult.meta.data_status}`}>{timelineResult.meta.data_status}</span>}</div>{timelineResult && selectedPoint ? <><strong>{timelineResult.site.name}</strong><p className="muted">{selectedPoint.timestamp} UTC · {timelineResult.meta.horizon_mode} horizon</p><div className="inspector-values"><span>Sun elevation <b>{selectedPoint.sun.elevation_deg}°</b></span><span>Sun horizon <b>{selectedPoint.sun.horizon_elevation_deg}°</b></span><span>Sun visible <b>{selectedPoint.sun.visible ? 'Yes' : 'No'}</b></span><span>Earth elevation <b>{selectedPoint.earth.elevation_deg}°</b></span><span>Earth horizon <b>{selectedPoint.earth.horizon_elevation_deg}°</b></span><span>Earth visible <b>{selectedPoint.earth.visible ? 'Yes' : 'No'}</b></span></div></> : <p className="muted">Site and returned sample values appear here after timeline analysis.</p>}</>
+                : <><div className="card-heading"><h2>Comparison inspector</h2></div>{comparisonResult ? <p>{comparisonResult.recommended_label} · {comparisonResult.recommendation_reason}</p> : <p className="muted">Comparison results appear below after the job completes.</p>}</>}
+          </section>
           <div className="workstation-bottom">
           {workflow === 'timeline' ? (
             timelineResult ? (
@@ -760,7 +711,11 @@ export function ObservationWorkspace() {
           ) : (
             <>
               {result && observation.resultRequest && <p className="muted">Displayed result uses {observation.resultRequest.horizon_mode} mode and its submitted scenario settings{observation.busy ? '; a new calculation is running' : ''}. Form edits do not change this result.</p>}
-              <ObservationResult result={result} request={observation.resultRequest} coverage={observation.resultCoverage} />
+              <section className="workspace-card analytics-empty" aria-label="Timeline and analytics">
+                <div className="card-heading"><h2>{workflow === 'comparison' ? 'Comparison analytics' : 'Timeline & analytics'}</h2></div>
+                <p className="muted">{workflow === 'comparison' ? 'A completed backend comparison and its returned metrics will appear here.' : 'No timeline requested. Returned samples, elevation plots, intervals, and metrics will appear here after analysis.'}</p>
+                {workflow === 'now' && <button type="button" className="secondary-button" onClick={() => selectWorkflow('timeline')}>Set up a timeline</button>}
+              </section>
             </>
           )}
           {comparisonResult && <section className="workspace-card comparison-results" aria-label="Comparison results">
@@ -771,7 +726,6 @@ export function ObservationWorkspace() {
             <div className="table-scroll"><table className="observation-table"><caption>Backend rank and returned metrics, in backend order</caption><thead><tr><th>Rank</th><th>Scenario / site</th><th>Start (UTC)</th><th>Sunlit</th><th>Earth visible</th><th>Golden</th><th>Longest golden</th><th>Score</th><th>Detail</th></tr></thead><tbody>{comparisonResult.ranked_scenarios.map((item) => <tr key={item.rank}><td>{item.rank}</td><th scope="row">{item.label}<br /><span className="muted">{item.site.name}</span></th><td>{item.start_time}</td><td>{item.summary.sunlit_pct}%</td><td>{item.summary.earth_visible_pct}%</td><td>{item.summary.golden_pct}%</td><td>{item.summary.longest_golden_window_hours} h</td><td>{item.score.toFixed(1)}</td><td><button type="button" className="secondary-button" onClick={() => inspectComparedScenario(item.label)}>Open timeline</button></td></tr>)}</tbody></table></div>
             <details><summary>Comparison provenance</summary><p>Model {comparisonResult.meta.model_version} · {comparisonResult.meta.horizon_mode} · {comparisonResult.meta.time_resolution_minutes} minute samples · terrain dataset {comparisonResult.meta.terrain_dataset_id ?? 'none'}</p><ul className="source-list">{comparisonResult.meta.sources.map((source, index) => <li key={`${source.name}-${index}`}><SourceLink url={source.url}>{source.name}</SourceLink><p className="muted">Version {source.version ?? 'not reported'} · Retrieved {source.fetched_at}</p></li>)}</ul></details>
           </section>}
-          <CSAResources />
           </div>
         </div>
       </div>
