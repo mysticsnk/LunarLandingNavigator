@@ -17,7 +17,7 @@ import type { Site, ResolvedSite } from '../../api/types'
 const MOON_RADIUS = 2.5
 const SUN_DISTANCE = 11.0
 const EARTH_DISTANCE = 8.5
-const DEFAULT_CAMERA_POS: [number, number, number] = [3.5, 2.2, 6.0]
+const DEFAULT_CAMERA_POS: [number, number, number] = [4.3, 2.7, 7.2]
 const SOUTH_POLE_CAMERA_POS: [number, number, number] = [0.1, -6.5, 2.0]
 const NEAR_SIDE_CAMERA_POS: [number, number, number] = [7.0, 0.5, 0.0]
 const FAR_SIDE_CAMERA_POS: [number, number, number] = [-7.0, 0.5, 0.0]
@@ -471,8 +471,8 @@ export const GlobalMoonScene: React.FC<GlobalMoonSceneProps> = ({
         position: 'relative',
         width: '100%',
         height: '100%',
-        minHeight: '380px',
-        backgroundColor: '#0a0a0e',
+        minHeight: '0',
+        backgroundColor: 'transparent',
         borderRadius: '6px',
         overflow: 'hidden',
         display: 'flex',
@@ -523,8 +523,8 @@ export const GlobalMoonScene: React.FC<GlobalMoonSceneProps> = ({
           zIndex: 9,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          <span style={{ color: '#fff', fontWeight: 600 }}>Global Moon</span>
+        <div className="global-hud-status" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <span className="global-hud-title" style={{ color: '#fff', fontWeight: 600 }}>Global Moon</span>
           {activeCoord && (
             <span style={{ color: '#d9d9d9' }} data-testid="global-selected-coord">
               Site: {activeCoord.latitude.toFixed(2)}°, {activeCoord.longitude.toFixed(2)}°
@@ -549,7 +549,7 @@ export const GlobalMoonScene: React.FC<GlobalMoonSceneProps> = ({
         </div>
 
         {/* View Presets & Camera Reset (Task 1 & 3) */}
-        <div style={{ display: 'flex', gap: '5px' }}>
+        <div className="global-hud-controls" style={{ display: 'flex', gap: '5px' }}>
           {activeCoord && (
             <button
               type="button"
@@ -606,7 +606,7 @@ export const GlobalMoonScene: React.FC<GlobalMoonSceneProps> = ({
       </div>
 
       {/* 3D WebGL Canvas with Error Isolation */}
-      <div style={{ position: 'relative', flex: 1, width: '100%' }}>
+      <div className="global-canvas-wrap" style={{ position: 'relative', flex: 1, width: '100%' }}>
         <SceneErrorBoundary onError={onError}>
           <Suspense
             fallback={
@@ -616,7 +616,7 @@ export const GlobalMoonScene: React.FC<GlobalMoonSceneProps> = ({
             }
           >
             <Canvas
-              camera={{ position: DEFAULT_CAMERA_POS, fov: 42 }}
+              camera={{ position: DEFAULT_CAMERA_POS, fov: 40, near: 0.1, far: 80 }}
               style={{ width: '100%', height: '100%' }}
               data-testid="global-moon-canvas"
             >
@@ -653,6 +653,7 @@ export const GlobalMoonScene: React.FC<GlobalMoonSceneProps> = ({
         {catalogSites && catalogSites.length > 0 && (
           <div
             data-testid="global-site-markers-list"
+            className="global-site-markers-accessible"
             style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', pointerEvents: 'auto', maxWidth: '70%' }}
           >
             {catalogSites.map((site) => {

@@ -273,6 +273,9 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
     loading: isTerrainLoading,
     error: terrainError,
   } = useHeightmap(terrainRegionId)
+  const terrainPreviewSite = catalog?.items.find(
+    (site) => site.terrain_region_id && site.id !== activeCatalogSite?.id,
+  )
   const coordinate = displayedSite
     ? { latitude: displayedSite.latitude, longitude: displayedSite.longitude }
     : draft.mode === 'catalog'
@@ -311,7 +314,7 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
             role={workflow === 'comparison' ? 'dialog' : undefined}
             aria-modal={workflow === 'comparison' ? true : undefined}
           >
-            <div className="card-heading"><h2 id="scenario-heading">{workflow === 'comparison' ? 'Compare sites' : 'Landing sites & analysis'}</h2>{workflow === 'comparison' && <button ref={comparisonCloseRef} type="button" className="secondary-button" onClick={onCloseComparison}>Close</button>}</div>
+            <div className="card-heading"><h2 id="scenario-heading">{workflow === 'comparison' ? 'Compare sites' : 'Landing sites'}</h2>{workflow === 'comparison' && <button ref={comparisonCloseRef} type="button" className="secondary-button" onClick={onCloseComparison}>Close</button>}</div>
             <form onSubmit={submit} noValidate>
               <fieldset hidden={workflow === 'comparison'}>
                 <legend>Analysis</legend>
@@ -633,17 +636,13 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
                 </button>
               </div>
               <p className="muted">
-                Complete spherical Moon in MCMF coordinates with active Earth communication link · drag to orbit, scroll to zoom.
+                Complete spherical Moon in the global frame; Earth link state follows the returned observation · drag to orbit, scroll to zoom.
               </p>
 
-              {/* 3D Global Moon Viewport (Dominant Stage 5 view) */}
+              {/* Global Moon viewport */}
               <div
                 className="map-viewport"
                 data-testid="global-moon-viewport"
-                style={{
-                  height: layoutMode === 'enlarge-global' ? '520px' : '360px',
-                  marginBottom: '10px',
-                }}
               >
                 <GlobalMoonScene
                   catalogSites={catalog?.items}
@@ -670,32 +669,28 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
                 />
               </div>
 
-              {/* Registered 2D Layer Map with Layer Switching */}
-              {!mapLayers && !mapError && (
-                <p role="status">Loading map layers...</p>
-              )}
-              {mapError && <RequestError error={mapError} />}
-              {mapLayers?.items.length === 0 && (
-                <p>No registered map layers are available.</p>
-              )}
-              {mapError && (
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => {
-                    setMapError(null)
-                    setMapAttempt((value) => value + 1)
-                  }}
-                >
-                  Retry map layers
-                </button>
-              )}
-              {!!mapLayers?.items.length && (
-                <details className="layer-map-drawer" style={{ marginTop: '8px' }}>
-                  <summary style={{ cursor: 'pointer', fontSize: '0.75rem', color: '#a0a5b5', padding: '4px 0' }}>
-                    2D Projections & Map Layers (LROC / Moon Trek)
-                  </summary>
-                  <div style={{ marginTop: '6px' }}>
+              <details className="layer-map-drawer">
+                <summary>
+                  Registered map layers (Moon Trek / LROC)
+                  {mapError ? ' · unavailable' : !mapLayers ? ' · loading' : ''}
+                </summary>
+                <div className="layer-map-drawer-content">
+                  {!mapLayers && !mapError && <p role="status">Loading map layers...</p>}
+                  {mapError && <RequestError error={mapError} />}
+                  {mapLayers?.items.length === 0 && <p>No registered map layers are available.</p>}
+                  {mapError && (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => {
+                        setMapError(null)
+                        setMapAttempt((value) => value + 1)
+                      }}
+                    >
+                      Retry map layers
+                    </button>
+                  )}
+                  {!!mapLayers?.items.length && (
                     <LunarMap
                       layers={mapLayers.items}
                       quickmapUrl={activeCatalogSite?.quickmap_url ?? null}
@@ -709,11 +704,11 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
                         })
                       }
                     />
-                  </div>
-                </details>
-              )}
+                  )}
+                </div>
+              </details>
               <p className="field-help">
-                Spherical MCMF frame with authoritative Earth/Sun vectors and communication line. Registered Moon Trek / LROC imagery below.
+                Global reference view · site markers use the catalog coordinate frame.
               </p>
             </section>
             <section
@@ -738,7 +733,7 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
               {/* Site Inspector Summary Panel matching Image 2 */}
 
               <p className="muted">
-                Schematic local ENU scene · directions from the observation API.
+                Local ENU terrain preview from the registered heightmap; directions come from the observation API.
               </p>
               <div
                 className="scene-viewport"
@@ -762,6 +757,23 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
                   terrainError={terrainError}
                 />
               </div>
+              {!heightmap && !isTerrainLoading && !terrainRegionId && terrainPreviewSite && (
+                <div className="terrain-preview-action" role="status">
+                  <span>Numerical terrain coverage is not selected.</span>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => change({
+                      mode: 'catalog',
+                      site: terrainPreviewSite,
+                      latitude: String(terrainPreviewSite.latitude),
+                      longitude: String(terrainPreviewSite.longitude),
+                    })}
+                  >
+                    Preview {terrainPreviewSite.name}
+                  </button>
+                </div>
+              )}
               <p className="field-help">
                 Marker distances are for display; terrain mesh shows local numerical geometry when available.
               </p>
