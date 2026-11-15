@@ -218,7 +218,7 @@ export function ObservationWorkspace() {
     setCoverageState(frozen.horizon_mode === 'terrain' ? 'checking' : 'idle')
     setDraft(nextDraft)
     setWorkflow('timeline')
-    setInspectedComparison({ label, model: comparison.result!.meta.model_version, dataset: comparison.result!.meta.terrain_dataset_id })
+    setInspectedComparison({ label, model: ranked.provenance.model_version, dataset: ranked.provenance.terrain_dataset_id })
     void timeline.submit(request)
   }
 
@@ -798,7 +798,7 @@ export function ObservationWorkspace() {
                   earthDirectionEnu={selectedPoint?.earth.direction_enu ?? null}
                   observerHeightM={workflow === 'comparison' ? comparison.resultRequest?.observer_height_m : workflow === 'timeline' ? timelineResult?.site.observer_height_m : result?.site.observer_height_m ?? Number(draft.height)}
                   horizonMode={(workflow === 'comparison' ? comparisonResult?.meta.horizon_mode : workflow === 'timeline' ? timelineResult?.meta.horizon_mode : result?.meta.horizon_mode) ?? draft.horizonMode}
-                  terrainDatasetId={(workflow === 'comparison' ? comparisonResult?.meta.terrain_dataset_id : workflow === 'timeline' ? timelineResult?.meta.terrain_dataset_id : result?.meta.terrain_dataset_id) ?? null}
+                  terrainDatasetId={(workflow === 'comparison' ? comparisonResult?.ranked_scenarios[0]?.provenance.terrain_dataset_id : workflow === 'timeline' ? timelineResult?.meta.terrain_dataset_id : result?.meta.terrain_dataset_id) ?? null}
                   visibilityMarginDeg={workflow === 'comparison' ? comparison.resultRequest?.visibility_margin_deg : workflow === 'now' && result ? observation.resultRequest?.visibility_margin_deg : Number(draft.margin)}
                   isLoading={busy}
                   heightmap={heightmap}
@@ -836,7 +836,7 @@ export function ObservationWorkspace() {
             <p><strong>Recommendation:</strong> {comparisonResult.recommended_label}. {comparisonResult.recommendation_reason}</p>
             <p className="field-help">v1 product score = 40% sunlight + 30% Earth visibility + 30% golden-window time. It is not an official NASA safety certification. Equal displayed scores may retain different backend ranks because ranking uses unrounded values and tie-breaks.</p>
             <div className="table-scroll"><table className="observation-table"><caption>Backend rank and returned metrics, in backend order</caption><thead><tr><th>Rank</th><th>Scenario / site</th><th>Start (UTC)</th><th>Sunlit</th><th>Earth visible</th><th>Golden</th><th>Longest golden</th><th>Score</th><th>Detail</th></tr></thead><tbody>{comparisonResult.ranked_scenarios.map((item) => <tr key={item.rank}><td>{item.rank}</td><th scope="row">{item.label}<br /><span className="muted">{item.site.name}</span></th><td>{item.start_time}</td><td>{item.summary.sunlit_pct}%</td><td>{item.summary.earth_visible_pct}%</td><td>{item.summary.golden_pct}%</td><td>{item.summary.longest_golden_window_hours} h</td><td>{item.score.toFixed(1)}</td><td><button type="button" className="secondary-button" onClick={() => inspectComparedScenario(item.label)}>Open timeline</button></td></tr>)}</tbody></table></div>
-            <details><summary>Comparison provenance</summary><p>Model {comparisonResult.meta.model_version} · {comparisonResult.meta.horizon_mode} · {comparisonResult.meta.time_resolution_minutes} minute samples · terrain dataset {comparisonResult.meta.terrain_dataset_id ?? 'none'}</p><ul className="source-list">{comparisonResult.meta.sources.map((source, index) => <li key={`${source.name}-${index}`}><SourceLink url={source.url}>{source.name}</SourceLink><p className="muted">Version {source.version ?? 'not reported'} · Retrieved {source.fetched_at}</p></li>)}</ul></details>
+            <details><summary>Comparison provenance</summary><p>Ranking model {comparisonResult.meta.model_version} · {comparisonResult.meta.horizon_mode} · {comparisonResult.meta.time_resolution_minutes} minute samples · shared terrain dataset {comparisonResult.meta.terrain_dataset_id ?? 'multiple or none'}</p><h3>Scenario data provenance</h3><ul className="source-list">{comparisonResult.ranked_scenarios.map((scenario) => <li key={scenario.label}><strong>{scenario.label}</strong><p className="muted">Model {scenario.provenance.model_version} · terrain dataset {scenario.provenance.terrain_dataset_id ?? 'none'}</p><ul>{scenario.provenance.sources.map((source, index) => <li key={`${source.name}-${index}`}><SourceLink url={source.url}>{source.name}</SourceLink><p className="muted">Version {source.version ?? 'not reported'} · Retrieved {source.fetched_at}</p></li>)}</ul></li>)}</ul></details>
           </section>}
           <CSAResources />
           </div>

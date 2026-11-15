@@ -192,8 +192,16 @@ See contracts/examples/comparison-request.json for a complete development fixtur
 
 Result fields: ranking_version=`v1`, ranked_scenarios, recommended_label,
 recommendation_reason and meta. Each ranked scenario has rank, label, site,
-start_time, end_time, score and the same summary schema as timeline. Do not
+start_time, end_time, score, the same summary schema as timeline, and provenance
+containing its actual model_version, terrain_dataset_id, and sources. Do not
 include full point arrays. For details, request a timeline for that scenario.
+
+Comparison metadata reports a shared terrain_dataset_id only when every terrain
+scenario uses the same dataset. It is null for geometric mode or when terrain
+scenarios use different datasets; each ranked scenario retains its own dataset ID
+and sources in provenance. A scenario's terrain_dataset_id is null only in
+geometric mode. The top-level model_version identifies the comparison aggregation
+implementation; per-scenario calculation versions are reported in provenance.
 
 ```text
 score = 0.40 * sunlit_pct + 0.30 * earth_visible_pct + 0.30 * golden_pct
@@ -233,7 +241,7 @@ The common error shape is:
 Never replace a failure with fabricated angles or windows. Failed jobs store the
 same error object (code, message, details, request_id), without a second envelope.
 
-## Current Stage 4 runtime boundary
+## Current runtime boundary
 
 Implemented: GET /health, GET /sites, GET /sites/{site_id}, GET /resources/csa,
 POST /ephemeris/now, POST /ephemeris/timeline, GET /jobs/{job_id},
@@ -254,12 +262,18 @@ Only successful calculation results are cached, and ready results remain availab
 for at least seven days after completion. Resource caching distinguishes fresh,
 cached and stale data and never replaces provider failure with synthetic data.
 
+The Stage 5 comparison route validates requests, resolves all scenario sites,
+and durably queues kind `comparison`. The worker evaluates each scenario through
+the timeline service in sequence, then invokes the shared v1 ranking service.
+Any scenario failure fails the complete job; a partial ranking is not stored.
+OpenAPI marks the operation implemented.
+
 The real map and terrain routers are registered by the default application.
 Terrain coverage and heightmaps use registered numerical datasets; terrain
 visibility calculations use the source raster and curved lunar geometry, while
-the local scene heightmap is display-only. Comparison remains unimplemented and
-its route is not registered. Full rules above describe the complete v1 contract
-and do not imply that every planned operation is implemented.
+the local scene heightmap is display-only. Implementation status is tracked per
+operation in OpenAPI. Full rules above describe the v1 contract and do not imply
+that every operation is implemented.
 
 See integration/STAGE1_BACKEND.md for startup, recovery, cache policy, source
 provenance, remaining service precision limitations and team integration steps.

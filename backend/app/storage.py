@@ -34,10 +34,17 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from app.astronomy import normalize_longitude
 from app.core.database import get_engine
 from app.core.problems import APIProblem
-from app.requests import CatalogSite, NowRequest, TimelineRequest, canonical_time
+from app.requests import (
+    CatalogSite,
+    ComparisonRequest,
+    NowRequest,
+    TimelineRequest,
+    canonical_time,
+)
 
 MODEL_VERSION = "geometric-now-v1"
 TIMELINE_MODEL_VERSION = "geometric-timeline-v1"
+COMPARISON_MODEL_VERSION = "comparison-v1"
 TERRAIN_PROCESSING_VERSION = "lunar-south-polar-v1"
 metadata = MetaData()
 json_type = JSON().with_variant(JSONB(), "postgresql")
@@ -76,7 +83,7 @@ jobs = Table(
     Column("lease_expires_at", DateTime(timezone=True)),
     Column("attempts", Integer, nullable=False),
     Column("result_expires_at", DateTime(timezone=True)),
-    CheckConstraint("kind IN ('now','timeline')", name="ck_observation_jobs_kind"),
+    CheckConstraint("kind IN ('now','timeline','comparison')", name="ck_observation_jobs_kind"),
     CheckConstraint("status IN ('queued','running','succeeded','failed')"),
 )
 Index("ix_jobs_queue", jobs.c.status, jobs.c.created_at)
@@ -145,6 +152,10 @@ def iso(value):
 
 def request_key(normalized):
     kind = normalized.get("kind", "now")
+    if kind == "comparison":
+        return hashlib.sha256(
+            json.dumps(normalized, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
     request_fields = (
         ("start_time", "duration_days", "step_minutes") if kind == "timeline" else ("target_time",)
     )
@@ -203,7 +214,9 @@ class Repository:
             "offset": offset,
         }
 
-    def resolve(self, request: NowRequest | TimelineRequest, submitted=None):
+    def resolve(self, request: NowRequest | TimelineRequest | ComparisonRequest, submitted=None):
+        if isinstance(request, ComparisonRequest):
+            return self.resolve_comparison(request)
         if isinstance(request.site, CatalogSite):
             record = self.site(request.site.site_id)
             preferred_region = record["terrain_region_id"]
@@ -280,6 +293,51 @@ class Repository:
                     "terrain_region_id": terrain_region_id,
                 }
             ),
+        }
+
+    def resolve_comparison(self, request: ComparisonRequest):
+        scenarios = []
+        for index, scenario in enumerate(request.scenarios):
+            timeline_request = TimelineRequest(
+                site=scenario.site,
+                start_time=iso(scenario.start_time),
+                duration_days=request.duration_days,
+                step_minutes=request.step_minutes,
+                horizon_mode=request.horizon_mode,
+                observer_height_m=request.observer_height_m,
+                visibility_margin_deg=request.visibility_margin_deg,
+            )
+            try:
+                normalized = self.resolve(timeline_request)
+            except APIProblem as exc:
+                if exc.code == "TERRAIN_UNAVAILABLE":
+                    raise APIProblem(
+                        exc.status,
+                        exc.code,
+                        exc.message,
+                        [
+                            {
+                                **detail,
+                                "field": f"scenarios.{index}.site",
+                            }
+                            for detail in exc.details
+                        ],
+                    ) from exc
+                raise
+            normalized["label"] = scenario.label
+            scenarios.append(normalized)
+        dataset_ids = {scenario.get("terrain_dataset_id") for scenario in scenarios}
+        return {
+            "kind": "comparison",
+            "scenarios": scenarios,
+            "duration_days": request.duration_days,
+            "step_minutes": request.step_minutes,
+            "horizon_mode": request.horizon_mode,
+            "observer_height_m": request.observer_height_m,
+            "visibility_margin_deg": request.visibility_margin_deg,
+            "ranking_version": "v1",
+            "model_version": COMPARISON_MODEL_VERSION,
+            "terrain_dataset_id": next(iter(dataset_ids)) if len(dataset_ids) == 1 else None,
         }
 
     def terrain_dataset(self, dataset_id):

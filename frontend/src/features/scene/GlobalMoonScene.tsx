@@ -521,6 +521,8 @@ export const GlobalMoonScene: React.FC<GlobalMoonSceneProps> = ({
     return null
   }, [selectedSite, selectedCoordinate])
 
+  const activeObservationPoint = isLoading ? null : observationPoint
+
   const linkStatus = useMemo(() => {
     if (isLoading) return { label: 'Link: Awaiting ephemeris…', color: '#888' }
     if (!observationPoint) return { label: 'Link: Awaiting observation', color: '#888' }
@@ -678,7 +680,7 @@ export const GlobalMoonScene: React.FC<GlobalMoonSceneProps> = ({
                 selectedCoordinate={selectedCoordinate}
                 onSelectCoordinate={onSelectCoordinate}
                 onSelectSite={onSelectSite}
-                observationPoint={observationPoint}
+                observationPoint={activeObservationPoint}
                 cameraPreset={cameraPreset}
               />
             </Canvas>
@@ -734,20 +736,20 @@ export const GlobalMoonScene: React.FC<GlobalMoonSceneProps> = ({
         )}
 
         {/* Link indicator representation in DOM */}
-        {observationPoint && (
+        {activeObservationPoint && (
           <div
-            data-testid={observationPoint.earth.visible ? 'comm-link-active' : 'comm-link-blocked'}
+            data-testid={activeObservationPoint.earth.visible ? 'comm-link-active' : 'comm-link-blocked'}
             style={{
               padding: '2px 8px',
               backgroundColor: 'rgba(10, 10, 14, 0.85)',
-              border: `1px solid ${observationPoint.earth.visible ? '#00f0ff' : '#666'}`,
+              border: `1px solid ${activeObservationPoint.earth.visible ? '#00f0ff' : '#666'}`,
               borderRadius: '3px',
               fontSize: '0.7rem',
-              color: observationPoint.earth.visible ? '#00f0ff' : '#aaa',
+              color: activeObservationPoint.earth.visible ? '#00f0ff' : '#aaa',
               pointerEvents: 'auto',
             }}
           >
-            {observationPoint.earth.visible ? 'Signal link active' : 'Signal link blocked'}
+            {activeObservationPoint.earth.visible ? 'Signal link active' : 'Signal link blocked'}
           </div>
         )}
       </div>

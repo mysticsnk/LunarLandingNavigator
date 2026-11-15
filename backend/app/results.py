@@ -209,6 +209,24 @@ class TimelineResult(BaseModel):
         return self
 
 
+class ScenarioProvenance(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    model_version: str = Field(min_length=1)
+    terrain_dataset_id: str | None
+    sources: list[Source] = Field(min_length=1)
+
+
+class ComparisonMeta(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    model_version: str = Field(min_length=1)
+    generated_at: AwareDatetime
+    data_status: Literal["fresh", "cached"]
+    horizon_mode: Literal["geometric", "terrain"]
+    time_resolution_minutes: Literal[15, 30, 60, 120, 180, 360]
+    terrain_dataset_id: str | None
+    sources: list[Source] = Field(min_length=1)
+
+
 class RankedScenario(BaseModel):
     model_config = ConfigDict(extra="forbid")
     rank: int = Field(ge=1, le=6)
@@ -216,28 +234,42 @@ class RankedScenario(BaseModel):
     site: ResolvedSite
     start_time: AwareDatetime
     end_time: AwareDatetime
-    score: float = Field(ge=0, le=100)
+    score: float = Field(ge=0, le=100, allow_inf_nan=False)
     summary: TimelineSummary
+    provenance: ScenarioProvenance
 
 
 class ComparisonResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    ranking_version: Literal["v1"] = "v1"
+    ranking_version: Literal["v1"]
     ranked_scenarios: list[RankedScenario] = Field(min_length=2, max_length=6)
     recommended_label: str = Field(min_length=1)
     recommendation_reason: str = Field(min_length=1)
-    meta: Meta
+    meta: ComparisonMeta
 
     @model_validator(mode="after")
-    def validate_comparison(self):
-        labels = [scenario.label for scenario in self.ranked_scenarios]
-        if len(labels) != len(set(labels)):
-            raise ValueError("Scenario labels must be unique")
-        if self.recommended_label != self.ranked_scenarios[0].label:
-            raise ValueError("recommended_label must match the first ranked scenario")
-        expected_ranks = list(range(1, len(self.ranked_scenarios) + 1))
-        actual_ranks = [s.rank for s in self.ranked_scenarios]
-        if actual_ranks != expected_ranks:
-            raise ValueError(f"Ranks must be 1 to {len(self.ranked_scenarios)}, got {actual_ranks}")
-        return self
+    def validate_scenario_provenance(self):
+        scenarios = self.ranked_scenarios
+        if [scenario.rank for scenario in scenarios] != list(range(1, len(scenarios) + 1)):
+            raise ValueError("scenario ranks must be contiguous and match result order")
+        labels = [scenario.label for scenario in scenarios]
+        if len(labels) != len(set(labels)) or self.recommended_label != labels[0]:
+            raise ValueError("recommended scenario must be first and labels must be unique")
+        periods = {
+            scenario.end_time.astimezone(UTC) - scenario.start_time.astimezone(UTC)
+            for scenario in scenarios
+        }
+        if len(periods) != 1 or not timedelta(0) < next(iter(periods)) <= timedelta(days=30):
+            raise ValueError("comparison scenarios must share duration")
 
+        dataset_ids = {scenario.provenance.terrain_dataset_id for scenario in scenarios}
+        if self.meta.horizon_mode == "geometric":
+            if dataset_ids != {None} or self.meta.terrain_dataset_id is not None:
+                raise ValueError("geometric comparison provenance cannot name terrain datasets")
+        else:
+            if None in dataset_ids:
+                raise ValueError("terrain comparison scenarios require dataset provenance")
+            shared_dataset = next(iter(dataset_ids)) if len(dataset_ids) == 1 else None
+            if self.meta.terrain_dataset_id != shared_dataset:
+                raise ValueError("comparison meta must report only the shared terrain dataset")
+        return self

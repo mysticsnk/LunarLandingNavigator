@@ -22,10 +22,11 @@ from app.astronomy.timeline import (
     TimelineCalculationResult,
 )
 from app.results import (
+    ComparisonMeta,
     ComparisonResult,
-    Meta,
     RankedScenario,
     ResolvedSite,
+    ScenarioProvenance,
 )
 from app.results import (
     TimelineSummary as ResultSummary,
@@ -65,6 +66,7 @@ class ScenarioEvaluationInput(BaseModel):
     start_time: AwareDatetime
     end_time: AwareDatetime
     summary: ScenarioSummary
+    provenance: ScenarioProvenance
 
     @classmethod
     def from_timeline(
@@ -81,6 +83,7 @@ class ScenarioEvaluationInput(BaseModel):
         start_time = tl_dict["start_time"]
         end_time = tl_dict["end_time"]
         summary = tl_dict["summary"]
+        meta = tl_dict["meta"]
         return cls(
             label=label,
             site=site if isinstance(site, ResolvedSite) else ResolvedSite.model_validate(site),
@@ -92,6 +95,13 @@ class ScenarioEvaluationInput(BaseModel):
                 summary
                 if isinstance(summary, ResultSummary | AstronomySummary)
                 else _coerce_result_summary(summary)
+            ),
+            provenance=ScenarioProvenance.model_validate(
+                {
+                    "model_version": meta["model_version"],
+                    "terrain_dataset_id": meta["terrain_dataset_id"],
+                    "sources": meta["sources"],
+                }
             ),
         )
 
@@ -273,6 +283,7 @@ def rank_scenarios(
                 end_time=sc.end_time,
                 score=display_score,
                 summary=_coerce_result_summary(sc.summary),
+                provenance=sc.provenance,
             )
         )
 
@@ -297,13 +308,13 @@ def evaluate_scenarios(
 
 def evaluate_comparison(
     scenarios: Sequence[ScenarioEvaluationInput | dict[str, Any]],
-    meta: Meta | dict[str, Any],
+    meta: ComparisonMeta | dict[str, Any],
     *,
     precision: int | None = SCORE_PRECISION,
 ) -> ComparisonResult:
     """Evaluate and rank scenarios, returning complete ComparisonResult."""
     ranked, reason = evaluate_scenarios(scenarios, precision=precision)
-    meta_obj = meta if isinstance(meta, Meta) else Meta.model_validate(meta)
+    meta_obj = meta if isinstance(meta, ComparisonMeta) else ComparisonMeta.model_validate(meta)
     return ComparisonResult(
         ranking_version=RANKING_VERSION,
         ranked_scenarios=ranked,

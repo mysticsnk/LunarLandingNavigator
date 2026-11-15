@@ -255,7 +255,7 @@ export interface paths {
         put?: never;
         /**
          * submitComparisonRequest
-         * @description Reserved by the API v1 contract but not implemented in Stage 4.
+         * @description Stage 5 comparison job using shared settings and the agreed v1 ranking.
          */
         post: operations["submitComparisonRequest"];
         delete?: never;
@@ -601,7 +601,28 @@ export interface components {
             end_time: string;
             score: number;
             summary: components["schemas"]["Summary"];
+            provenance: components["schemas"]["ScenarioProvenance"];
         };
+        /** @description Actual calculation model, resolved terrain dataset (null only in geometric mode), and inputs used for this scenario. */
+        ScenarioProvenance: {
+            model_version: string;
+            terrain_dataset_id: string | null;
+            sources: components["schemas"]["Source"][];
+        };
+        /** @description Shared calculation settings and aggregation provenance. In terrain mode terrain_dataset_id is set only when every scenario uses the same dataset; per-scenario values are in ranked_scenarios[].provenance. */
+        ComparisonMeta: {
+            model_version: string;
+            /** Format: date-time */
+            generated_at: string;
+            /** @enum {string} */
+            data_status: "fresh" | "cached";
+            /** @enum {string} */
+            horizon_mode: "geometric" | "terrain";
+            /** @enum {integer} */
+            time_resolution_minutes: 15 | 30 | 60 | 120 | 180 | 360;
+            terrain_dataset_id: string | null;
+            sources: components["schemas"]["Source"][];
+        } & unknown;
         /** @description score=0.40*sunlit_pct+0.30*earth_visible_pct+0.30*golden_pct. Sort descending by unrounded score, then longest_golden_window_hours, then original request order. This is a product score, not an official NASA criterion. No point arrays. Formula changes require a new ranking_version. */
         ComparisonResult: {
             /** @constant */
@@ -609,13 +630,13 @@ export interface components {
             ranked_scenarios: components["schemas"]["RankedScenario"][];
             recommended_label: string;
             recommendation_reason: string;
-            meta: components["schemas"]["Meta"];
-        } & {
+            meta: components["schemas"]["ComparisonMeta"];
+        } & ({
             meta: {
                 /** @enum {integer} */
                 time_resolution_minutes?: 15 | 30 | 60 | 120 | 180 | 360;
             };
-        };
+        } & unknown);
         JobAccepted: {
             /** Format: uuid */
             job_id: string;

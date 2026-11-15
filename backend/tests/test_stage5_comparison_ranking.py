@@ -20,9 +20,10 @@ from app.astronomy.comparison import (
     validate_summary_metrics,
 )
 from app.results import (
+    ComparisonMeta,
     ComparisonResult,
-    Meta,
     ResolvedSite,
+    ScenarioProvenance,
     Source,
     TimelineSummary,
 )
@@ -40,9 +41,9 @@ def _sample_site(name: str = "Test Site", lat: float = -89.44, lon: float = 222.
     )
 
 
-def _sample_meta() -> Meta:
-    return Meta(
-        model_version="test-model-v1",
+def _sample_meta() -> ComparisonMeta:
+    return ComparisonMeta(
+        model_version="comparison-v1",
         generated_at=datetime(2027, 7, 16, 0, 0, 0, tzinfo=UTC),
         data_status="fresh",
         horizon_mode="geometric",
@@ -93,6 +94,11 @@ def _make_scenario(
         start_time=dt_start,
         end_time=dt_end,
         summary=summary,
+        provenance=ScenarioProvenance(
+            model_version="test-model-v1",
+            terrain_dataset_id=None,
+            sources=_sample_meta().sources,
+        ),
     )
 
 
