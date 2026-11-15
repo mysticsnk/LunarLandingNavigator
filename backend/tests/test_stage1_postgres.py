@@ -36,7 +36,7 @@ from app.storage import (
     terrain_datasets,
     terrain_regions,
 )
-from app.worker import HORIZONS_LOCK, execute_observation, execute_timeline, run_once
+from app.worker import HORIZONS_LOCK, execute_job, execute_observation, execute_timeline, run_once
 
 pytestmark = pytest.mark.integration
 
@@ -496,6 +496,50 @@ def test_timeline_lifecycle_cache_and_failures_with_postgresql(pg_client, pg_rep
     assert failed["status"] == "failed"
     assert failed["error"]["code"] == "ASTRONOMY_UNAVAILABLE"
     assert pg_client.get(distinct.json()["result_url"]).status_code == 409
+
+
+def test_comparison_job_lifecycle_and_cache_with_postgresql(pg_client, pg_repo):
+    root = Path(__file__).resolve().parents[2]
+    request = json.loads(
+        (root / "contracts/examples/comparison-request.json").read_text(encoding="utf-8")
+    )
+    result = json.loads(
+        (root / "contracts/examples/comparison-result.json").read_text(encoding="utf-8")
+    )
+    accepted = pg_client.post("/api/v1/ephemeris/compare", json=request)
+    assert accepted.status_code == 202
+    check_schema("JobAccepted", accepted.json())
+    assert accepted.json()["kind"] == "comparison"
+    assert run_once(pg_repo, executor=lambda _: result)
+
+    status = pg_client.get(accepted.json()["status_url"]).json()
+    stored = pg_client.get(accepted.json()["result_url"])
+    assert status["status"] == "succeeded"
+    assert stored.status_code == 200
+    check_schema("ComparisonResult", stored.json())
+    assert pg_repo.result(accepted.json()["job_id"]) == stored.json()
+
+    cached = pg_client.post("/api/v1/ephemeris/compare", json=request)
+    assert cached.status_code == 202
+    assert run_once(pg_repo, executor=lambda _: pytest.fail("Cache hit must not execute"))
+    cached_result = pg_client.get(cached.json()["result_url"]).json()
+    assert cached_result["meta"]["data_status"] == "cached"
+    assert cached_result["meta"]["generated_at"] == result["meta"]["generated_at"]
+
+    unavailable = {
+        **request,
+        "scenarios": [
+            {**request["scenarios"][0], "label": "Different A"},
+            request["scenarios"][1],
+        ],
+    }
+    failed = pg_client.post("/api/v1/ephemeris/compare", json=unavailable)
+    assert failed.status_code == 202
+    assert run_once(pg_repo, executor=execute_job)
+    failed_status = pg_client.get(failed.json()["status_url"]).json()
+    assert failed_status["status"] == "failed"
+    assert failed_status["error"]["code"] == "COMPARISON_UNAVAILABLE"
+    assert pg_client.get(failed.json()["result_url"]).status_code == 409
 
 
 @pytest.mark.skipif(

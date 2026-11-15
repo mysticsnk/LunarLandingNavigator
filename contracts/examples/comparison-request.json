@@ -3,6 +3,7 @@
     {
       "label": "Synthetic A",
       "site": {
+        "name": "Synthetic development site",
         "latitude": -89.44,
         "longitude": 222.1
       },
@@ -11,6 +12,7 @@
     {
       "label": "Synthetic B",
       "site": {
+        "name": "Synthetic development site",
         "latitude": -87.45,
         "longitude": 77
       },

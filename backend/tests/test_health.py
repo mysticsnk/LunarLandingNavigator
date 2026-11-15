@@ -129,6 +129,7 @@ def test_runtime_registers_current_routes(client):
         "/api/v1/resources/csa",
         "/api/v1/ephemeris/now",
         "/api/v1/ephemeris/timeline",
+        "/api/v1/ephemeris/compare",
         "/api/v1/jobs/{job_id}",
         "/api/v1/jobs/{job_id}/result",
         "/api/v1/map/layers",
@@ -140,8 +141,8 @@ def test_runtime_registers_current_routes(client):
     }
     for method, path in (("POST", "/api/v1/ephemeris/compare"),):
         response = client.request(method, path)
-        assert response.status_code == 404
-        assert_error(response, "HTTP_404")
+        assert response.status_code == 400
+        assert_error(response, "INVALID_REQUEST")
 
 
 def test_cors_only_allows_configured_origin(client):

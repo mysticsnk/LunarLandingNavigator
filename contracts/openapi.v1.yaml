@@ -4,8 +4,9 @@ info:
   version: 1.0.0
   description: Agreed API v1 contract. Stage 4 implements numerical terrain coverage,
     heightmaps, and terrain-aware single-time and timeline jobs alongside the Stage 3
-    timeline and Stage 2 health, catalog, CSA, map, and observation routes. Comparison
-    remains planned. Examples are synthetic development/test fixtures, not measured NASA results.
+    timeline, terrain, and Stage 2 health, catalog, CSA, map, and observation routes.
+    Stage 5 comparison submission is registered; its calculation service remains
+    pending. Examples are synthetic development/test fixtures, not measured NASA results.
     See docs/API_V1.md and docs/CONTRACT_DECISIONS.md.
 paths:
   /api/v1/health:
@@ -1607,7 +1608,7 @@ paths:
                 accepted:
                   summary: Development/test fixture; not measured NASA results
                   externalValue: ./examples/job-accepted-comparison.json
-      description: Reserved by the API v1 contract but not implemented in Stage 4.
+      description: Stage 5 comparison job using shared settings and the agreed v1 ranking.
       requestBody:
         required: true
         content:
@@ -2735,6 +2736,8 @@ components:
           maximum: 100
         summary:
           $ref: '#/components/schemas/Summary'
+        provenance:
+          $ref: '#/components/schemas/ScenarioProvenance'
       required:
       - rank
       - label
@@ -2743,6 +2746,67 @@ components:
       - end_time
       - score
       - summary
+      - provenance
+    ScenarioProvenance:
+      type: object
+      additionalProperties: false
+      properties:
+        model_version: *id001
+        terrain_dataset_id:
+          anyOf:
+          - *id001
+          - type: 'null'
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/Source'
+          minItems: 1
+      required:
+      - model_version
+      - terrain_dataset_id
+      - sources
+      description: Actual calculation model, resolved terrain dataset (null only in
+        geometric mode), and inputs used for this scenario.
+    ComparisonMeta:
+      type: object
+      additionalProperties: false
+      properties:
+        model_version: *id001
+        generated_at: *id007
+        data_status:
+          type: string
+          enum: [fresh, cached]
+        horizon_mode: *id009
+        time_resolution_minutes: *id013
+        terrain_dataset_id:
+          anyOf:
+          - *id001
+          - type: 'null'
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/Source'
+          minItems: 1
+      required:
+      - model_version
+      - generated_at
+      - data_status
+      - horizon_mode
+      - time_resolution_minutes
+      - terrain_dataset_id
+      - sources
+      description: Shared calculation settings and aggregation provenance. In terrain
+        mode terrain_dataset_id is set only when every scenario uses the same dataset;
+        per-scenario values are in ranked_scenarios[].provenance.
+      allOf:
+      - if:
+          properties:
+            horizon_mode:
+              const: geometric
+        then:
+          properties:
+            terrain_dataset_id:
+              type: 'null'
     ComparisonResult:
       type: object
       additionalProperties: false
@@ -2758,7 +2822,7 @@ components:
         recommended_label: *id001
         recommendation_reason: *id001
         meta:
-          $ref: '#/components/schemas/Meta'
+          $ref: '#/components/schemas/ComparisonMeta'
       required:
       - ranking_version
       - ranked_scenarios
@@ -2785,6 +2849,35 @@ components:
                 - 120
                 - 180
                 - 360
+      - if:
+          properties:
+            meta:
+              properties:
+                horizon_mode:
+                  const: geometric
+        then:
+          properties:
+            meta:
+              properties:
+                terrain_dataset_id:
+                  type: 'null'
+            ranked_scenarios:
+              items:
+                properties:
+                  provenance:
+                    properties:
+                      terrain_dataset_id:
+                        type: 'null'
+        else:
+          properties:
+            ranked_scenarios:
+              items:
+                properties:
+                  provenance:
+                    properties:
+                      terrain_dataset_id:
+                        type: string
+                        minLength: 1
     JobAccepted:
       type: object
       additionalProperties: false
