@@ -499,6 +499,29 @@ export const LunarScene: React.FC<LunarSceneProps> = (props) => {
         </div>
       )}
 
+      {/* Explicit unavailable state when numerical terrain DEM is not available for site (Task 5) */}
+      {!heightmap && !isSceneLoading && !terrainError && (
+        <div
+          data-testid="terrain-unavailable-notice"
+          style={{
+            padding: '3px 10px',
+            backgroundColor: 'rgba(30, 32, 44, 0.65)',
+            borderTop: '1px solid #282a36',
+            color: '#8c90a4',
+            fontSize: '0.68rem',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <span>
+            {horizonMode === 'terrain'
+              ? 'No display heightmap loaded. Terrain visibility remains API-provided.'
+              : 'No display heightmap loaded. The geometric reference plane is for visualization only.'}
+          </span>
+        </div>
+      )}
+
       {/* Bottom Terrain Reference Notice */}
       <div
         className="scene-horizon-notice"

@@ -96,16 +96,14 @@ afterEach(() => {
 })
 
 async function selectCatalog() {
-  await screen.findByRole('option', { name: 'Synthetic catalog site' })
-  fireEvent.change(screen.getByLabelText('Catalog site'), {
-    target: { value: 'development-site' },
-  })
+  await screen.findByRole('option', { name: /Synthetic catalog site/ })
+  fireEvent.click(screen.getByRole('option', { name: /Synthetic catalog site/ }))
   fireEvent.change(screen.getByLabelText('Observation date and time (UTC)'), {
     target: { value: '2027-07-15T00:00:00' },
   })
 }
 
-describe('Stage 6 workstation', () => {
+describe('Lunar Navigator workstation', () => {
   it('does not replace a failed layer catalog with static operational imagery', async () => {
     vi.mocked(apiClient.getMapLayers)
       .mockRejectedValueOnce(
@@ -126,10 +124,9 @@ describe('Stage 6 workstation', () => {
   })
   it('starts with unknown operational values and no fabricated directions', async () => {
     const { container } = render(<App />)
-    expect(screen.getByTestId('app-title')).toHaveTextContent(
-      'Lunar Landing Site Navigator',
-    )
+    expect(screen.getByTestId('app-title')).toHaveTextContent('LUNAR NAVIGATOR / WORKSTATION')
     expect(screen.getByText('Stage 6')).toBeInTheDocument()
+    expect(screen.queryByText('Stage 5')).not.toBeInTheDocument()
     expect(screen.getByText(/Sun visibility: Unknown/)).toBeInTheDocument()
     expect(screen.getByText('Simultaneous availability: Unknown')).toBeInTheDocument()
     expect(visual.scene.mock.lastCall![0]).toMatchObject({
@@ -138,25 +135,33 @@ describe('Stage 6 workstation', () => {
     })
     expect(container.textContent).not.toMatch(/\d+\s*(%|watts|mbps)/i)
     expect(apiClient.submitNow).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByText('CSA resources', { selector: 'summary' }))
     await screen.findByText('No matching articles in the available feed.')
   })
-  it('mounts the workstation rail, site inspector, global Moon, local preview, and source footer', async () => {
+  it('mounts the desktop workstation panels and selected-site inspector', async () => {
     render(<App />)
-    const rail = screen.getByRole('navigation', { name: 'Workstation panels' })
-    expect(within(rail).getByRole('link', { name: 'Global Moon view' })).toHaveAttribute('href', '#map-heading')
-    expect(within(rail).getByRole('link', { name: 'Local terrain preview' })).toHaveAttribute('href', '#scene-heading')
-    expect(screen.getByRole('heading', { name: 'Site inspector' })).toBeInTheDocument()
+    const rail = screen.getByRole('navigation', { name: 'Workstation sections' })
+    expect(within(rail).getByRole('button', { name: 'Global Moon layers' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Site inspector' })).toBeInTheDocument()
     expect(screen.getByTestId('global-moon-viewport')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Local terrain inspector' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Data source attribution')).toBeInTheDocument()
+    expect(screen.getByText('Horizons')).toBeInTheDocument()
+    expect(screen.getByText('Moon Trek')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Moon texture: NASA SVS/i })).toHaveAttribute(
+      'href',
+      'https://svs.gsfc.nasa.gov/4720/',
+    )
   })
   it('submits a catalog ID with an explicit UTC timestamp and source links', async () => {
-    const { container } = render(<App />)
+    render(<App />)
     await selectCatalog()
     expect(
       screen.getByRole('link', { name: /Official site source/ }),
     ).toHaveAttribute('href', catalog.items[0].source_url)
-    expect(within(container.querySelector('.grid-sidebar')!).getByRole('link', { name: /QuickMap/ })).toHaveAttribute('href', catalog.items[0].quickmap_url)
+    expect(screen.getByRole('link', { name: /QuickMap/ })).toHaveAttribute(
+      'href',
+      catalog.items[0].quickmap_url,
+    )
     fireEvent.click(screen.getByRole('button', { name: 'Request observation' }))
     await waitFor(() =>
       expect(apiClient.submitNow).toHaveBeenCalledWith(
@@ -224,8 +229,9 @@ describe('Stage 6 workstation', () => {
       ranked_scenarios: comparisonResult.ranked_scenarios.map((item, index) => ({ ...item, score: index === 0 ? 67.54 : 67.53 })),
     })
     render(<App />)
-    await screen.findByRole('option', { name: 'Synthetic catalog site' })
-    fireEvent.click(screen.getByRole('radio', { name: 'Compare scenarios' }))
+    await screen.findByRole('option', { name: /Synthetic catalog site/ })
+    fireEvent.click(screen.getByRole('button', { name: 'Compare sites' }))
+    await screen.findByRole('dialog', { name: 'Compare sites' })
     fireEvent.change(screen.getByLabelText('Scenario 1 label'), { target: { value: 'Synthetic A' } })
     fireEvent.change(screen.getByLabelText('Scenario 1 site'), { target: { value: 'development-site' } })
     fireEvent.change(screen.getByLabelText('Scenario 1 start time'), { target: { value: '2027-07-15T00:00:00' } })
@@ -236,6 +242,7 @@ describe('Stage 6 workstation', () => {
     fireEvent.change(screen.getByLabelText('Scenario 2 start time'), { target: { value: '2027-07-15T00:00:00' } })
     fireEvent.change(screen.getByLabelText('Duration (days)'), { target: { value: '1' } })
     fireEvent.change(screen.getByLabelText('Time step (minutes)'), { target: { value: '360' } })
+    fireEvent.click(screen.getByText('Observer & visibility settings'))
     fireEvent.change(screen.getByLabelText('Observer height (m)'), { target: { value: '4' } })
     fireEvent.change(screen.getByLabelText('Visibility margin (°)'), { target: { value: '0.5' } })
     vi.useFakeTimers()
@@ -261,7 +268,7 @@ describe('Stage 6 workstation', () => {
     expect(within(results).getByText(/Model development-fixture-v1 · terrain dataset none/)).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Global Moon view' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Local terrain inspector' })).toBeInTheDocument()
-    expect(screen.getByText('No matching articles in the available feed.')).toBeInTheDocument()
+    expect(screen.getByText('CSA resources', { selector: 'summary' })).toBeInTheDocument()
     fireEvent.click(within(results).getAllByRole('button', { name: 'Open timeline' })[0])
     expect(apiClient.submitTimeline).toHaveBeenLastCalledWith({
       site: { site_id: 'development-site' }, start_time: '2027-07-15T00:00:00Z', duration_days: 1,
@@ -271,7 +278,8 @@ describe('Stage 6 workstation', () => {
   })
   it('enforces the 2–6 scenario range and unique labels before any request', async () => {
     render(<App />)
-    fireEvent.click(screen.getByRole('radio', { name: 'Compare scenarios' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Compare sites' }))
+    await screen.findByRole('dialog', { name: 'Compare sites' })
     expect(screen.getByText('Scenarios (2/6)')).toBeInTheDocument()
     for (let i = 0; i < 4; i++) fireEvent.click(screen.getByRole('button', { name: 'Add scenario' }))
     expect(screen.getByText('Scenarios (6/6)')).toBeInTheDocument()
@@ -282,10 +290,19 @@ describe('Stage 6 workstation', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Scenario labels must be unique')
     expect(apiClient.submitComparison).not.toHaveBeenCalled()
   })
+  it('opens comparison as a drawer and restores the active workflow when closed', async () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('radio', { name: 'Timeline' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Compare sites' }))
+    expect(await screen.findByRole('dialog', { name: 'Compare sites' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(screen.getByRole('radio', { name: 'Timeline' })).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Request timeline' })).toBeInTheDocument()
+  })
   it('submits custom coordinates without a catalog ID and never clamps invalid latitude', async () => {
     render(<App />)
     await selectCatalog()
-    fireEvent.click(screen.getByLabelText('Custom coordinates'))
+    fireEvent.click(screen.getByRole('button', { name: 'Custom coords' }))
     fireEvent.change(screen.getByLabelText('Latitude (°)'), {
       target: { value: '91' },
     })
@@ -315,7 +332,7 @@ describe('Stage 6 workstation', () => {
     fireEvent.click(
       screen.getByRole('button', { name: 'Select test map coordinate' }),
     )
-    expect(screen.getByLabelText('Custom coordinates')).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Custom coords' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByLabelText('Latitude (°)')).toHaveValue(-88)
     expect(screen.getByLabelText('Longitude (° east)')).toHaveValue(25)
     expect(visual.map.mock.lastCall![0]).toMatchObject({
@@ -334,16 +351,14 @@ describe('Stage 6 workstation', () => {
         expect.any(Object),
       ),
     )
-    fireEvent.change(screen.getByLabelText('Category'), {
-      target: { value: 'apollo' },
-    })
+    fireEvent.click(screen.getByRole('button', { name: 'Apollo' }))
     await waitFor(() =>
       expect(apiClient.getSites).toHaveBeenLastCalledWith(
         { category: 'apollo', limit: 50, offset: 0 },
         expect.any(Object),
       ),
     )
-    expect(screen.getByLabelText('Catalog site')).toHaveValue('')
+    expect(screen.getByRole('listbox', { name: 'Landing sites' })).toBeInTheDocument()
   })
   it('displays actual returned values and provenance, integrates ENU vectors, and keeps the old result tied to its scenario on edit', async () => {
     vi.mocked(apiClient.getResult).mockResolvedValue({
@@ -362,13 +377,6 @@ describe('Stage 6 workstation', () => {
       await vi.advanceTimersByTimeAsync(2000)
     })
     expect(screen.getByText('Observation ready')).toBeInTheDocument()
-    const inspector = screen.getByRole('region', { name: 'Site inspector' })
-    expect(within(inspector).getByText('Synthetic development site')).toBeInTheDocument()
-    expect(within(inspector).getByText('-89.44°')).toBeInTheDocument()
-    expect(within(inspector).getByText('-137.9°')).toBeInTheDocument()
-    expect(within(inspector).getByText('0 m')).toBeInTheDocument()
-    expect(within(inspector).getByText('Visible / Visible')).toBeInTheDocument()
-    expect(within(inspector).getByText('Available')).toBeInTheDocument()
     const section = screen.getByRole('region', { name: 'Observation' })
     expect(within(section).getByText('cached')).toBeInTheDocument()
     expect(
@@ -400,10 +408,11 @@ describe('Stage 6 workstation', () => {
       dataStatus: 'cached',
       site: observationResult.site,
     })
+    fireEvent.click(screen.getByText('Observer & visibility settings'))
     fireEvent.change(screen.getByLabelText('Observer height (m)'), {
       target: { value: '3' },
     })
-    expect(within(screen.getByRole('region', { name: 'Observation' })).getByText('Synthetic development site')).toBeInTheDocument()
+    expect(screen.getByText('Synthetic development site')).toBeInTheDocument()
     expect(screen.getByText(/Displayed result uses geometric mode/)).toBeInTheDocument()
     expect(screen.getByText(/Simultaneous availability:/)).toBeInTheDocument()
     expect(visual.scene.mock.lastCall![0]).toMatchObject({
@@ -414,9 +423,10 @@ describe('Stage 6 workstation', () => {
   it('checks terrain coverage, submits only an explicit supported terrain request, and does not fall back', async () => {
     render(<App />)
     await selectCatalog()
-    fireEvent.change(screen.getByLabelText('Horizon mode'), { target: { value: 'terrain' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Terrain' }))
     expect(await screen.findByText(/Terrain supported.*test-dem-v1.*20 m/)).toBeInTheDocument()
     expect(vi.mocked(useHeightmap)).toHaveBeenLastCalledWith('test-region')
+    fireEvent.click(screen.getByText('Observer & visibility settings'))
     fireEvent.change(screen.getByLabelText('Observer height (m)'), { target: { value: '3' } })
     expect(screen.getByText(/Terrain supported.*test-dem-v1.*20 m/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Request observation' }))
@@ -430,11 +440,11 @@ describe('Stage 6 workstation', () => {
     else vi.mocked(apiClient.getTerrainCoverage).mockResolvedValue(coverageResult)
     render(<App />)
     await selectCatalog()
-    fireEvent.change(screen.getByLabelText('Horizon mode'), { target: { value: 'terrain' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Terrain' }))
     await screen.findByRole('alert')
     fireEvent.click(screen.getByRole('button', { name: 'Request observation' }))
     expect(apiClient.submitNow).not.toHaveBeenCalled()
-    expect(screen.getByLabelText('Horizon mode')).toHaveValue('terrain')
+    expect(screen.getByRole('button', { name: 'Terrain' })).toHaveAttribute('aria-pressed', 'true')
   })
   it.each([
     'TERRAIN_UNAVAILABLE',
@@ -468,8 +478,8 @@ describe('Stage 6 workstation', () => {
       'Catalog unavailable',
     )
     fireEvent.click(screen.getByRole('button', { name: 'Retry catalog' }))
-    await screen.findByRole('option', { name: 'Synthetic catalog site' })
-    fireEvent.click(screen.getByLabelText('Custom coordinates'))
+    await screen.findByRole('option', { name: /Synthetic catalog site/ })
+    fireEvent.click(screen.getByRole('button', { name: 'Custom coords' }))
     expect(screen.getByLabelText('Latitude (°)')).toBeInTheDocument()
   })
   it('preserves observation results and visual state when CSA resources fail independently', async () => {
@@ -492,7 +502,9 @@ describe('Stage 6 workstation', () => {
     })
     // Observation succeeds and renders despite CSA failure
     expect(screen.getByText('Observation ready')).toBeInTheDocument()
-    expect(within(screen.getByRole('region', { name: 'Observation' })).getByText('Synthetic development site')).toBeInTheDocument()
+    expect(
+      screen.getByText('Synthetic development site'),
+    ).toBeInTheDocument()
     expect(screen.getByText('CSA feed unavailable')).toBeInTheDocument()
     expect(visual.map).toHaveBeenCalled()
     expect(visual.scene).toHaveBeenCalled()

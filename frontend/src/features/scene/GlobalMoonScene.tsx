@@ -1,5 +1,5 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import {
@@ -22,90 +22,6 @@ const SOUTH_POLE_CAMERA_POS: [number, number, number] = [0.1, -6.5, 2.0]
 const NEAR_SIDE_CAMERA_POS: [number, number, number] = [7.0, 0.5, 0.0]
 const FAR_SIDE_CAMERA_POS: [number, number, number] = [-7.0, 0.5, 0.0]
 
-/**
- * Creates an offline, zero-network procedural lunar surface texture.
- * Ensures the scene never fails due to missing external image assets.
- */
-function createProceduralMoonTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas')
-  canvas.width = 1024
-  canvas.height = 512
-  const ctx = canvas.getContext('2d')
-
-  if (ctx) {
-    // Base lunar highland anorthosite gray
-    ctx.fillStyle = '#8f9299'
-    ctx.fillRect(0, 0, 1024, 512)
-
-    // Darker basaltic maria basins (Oceanus Procellarum, Mare Imbrium, Mare Tranquillitatis)
-    const maria = [
-      { x: 380, y: 190, r: 120, opacity: 0.45 }, // Oceanus Procellarum
-      { x: 470, y: 170, r: 85, opacity: 0.5 },  // Mare Imbrium
-      { x: 500, y: 220, r: 70, opacity: 0.4 },  // Mare Serenitatis
-      { x: 570, y: 240, r: 65, opacity: 0.45 }, // Mare Tranquillitatis
-      { x: 620, y: 230, r: 50, opacity: 0.35 }, // Mare Crisium
-      { x: 440, y: 310, r: 55, opacity: 0.35 }, // Mare Nubium
-    ]
-
-    for (const m of maria) {
-      const grad = ctx.createRadialGradient(m.x, m.y, 10, m.x, m.y, m.r)
-      grad.addColorStop(0, `rgba(45, 48, 56, ${m.opacity})`)
-      grad.addColorStop(0.7, `rgba(60, 64, 72, ${m.opacity * 0.7})`)
-      grad.addColorStop(1, 'rgba(143, 146, 153, 0)')
-      ctx.fillStyle = grad
-      ctx.beginPath()
-      ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2)
-      ctx.fill()
-    }
-
-    // Prominent rayed impact craters (Tycho, Copernicus, Kepler)
-    const craters = [
-      { x: 480, y: 360, r: 14, rays: 12, rayLen: 120 }, // Tycho
-      { x: 440, y: 210, r: 12, rays: 8, rayLen: 70 },   // Copernicus
-      { x: 410, y: 220, r: 8, rays: 6, rayLen: 45 },    // Kepler
-    ]
-
-    for (const c of craters) {
-      // Crater rim and bright floor
-      ctx.fillStyle = '#dcdfe6'
-      ctx.beginPath()
-      ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.strokeStyle = '#40434a'
-      ctx.lineWidth = 2
-      ctx.stroke()
-
-      // Radial ejecta rays
-      ctx.strokeStyle = 'rgba(235, 238, 245, 0.25)'
-      ctx.lineWidth = 1.5
-      for (let i = 0; i < c.rays; i++) {
-        const angle = (i * Math.PI * 2) / c.rays
-        ctx.beginPath()
-        ctx.moveTo(c.x, c.y)
-        ctx.lineTo(
-          c.x + Math.cos(angle) * c.rayLen,
-          c.y + Math.sin(angle) * c.rayLen,
-        )
-        ctx.stroke()
-      }
-    }
-
-    // Grid lines: Equator and Prime Meridian (subtle navigation aid)
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)'
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.moveTo(0, 256)
-    ctx.lineTo(1024, 256) // Equator (0° lat)
-    ctx.moveTo(512, 0)
-    ctx.lineTo(512, 512) // Prime Meridian (0° lon)
-    ctx.stroke()
-  }
-
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.wrapS = THREE.RepeatWrapping
-  texture.wrapT = THREE.ClampToEdgeWrapping
-  return texture
-}
 
 /**
  * Camera controller supporting orbit rotation, damping, and programmatic view presets.
@@ -324,7 +240,8 @@ const GlobalSceneContent: React.FC<SceneContentProps> = ({
   observationPoint,
   cameraPreset,
 }) => {
-  const moonTexture = useMemo(() => createProceduralMoonTexture(), [])
+  const moonTexture = useLoader(THREE.TextureLoader, '/assets/lroc_color_2k.jpg')
+  moonTexture.colorSpace = THREE.SRGBColorSpace
 
   // Selected site position in global scene coordinates
   const sitePos = useMemo(() => {
@@ -391,27 +308,37 @@ const GlobalSceneContent: React.FC<SceneContentProps> = ({
     <>
       <CameraControls cameraTarget={cameraPreset} />
 
-      {/* Lighting: Ambient + Directional Sun */}
-      <ambientLight intensity={sunPos ? 0.25 : 0.6} color="#dbe2ef" />
-      {sunPos && (
-        <directionalLight
-          position={sunPos}
-          intensity={2.8}
-          color="#fff8e7"
-          castShadow
-        />
+      {/* Lighting: Neutral geographic lighting before observation, astronomical directional light after observation */}
+      {sunPos ? (
+        <>
+          <ambientLight intensity={0.25} color="#dbe2ef" />
+          <directionalLight
+            position={sunPos}
+            intensity={2.8}
+            color="#fff8e7"
+            castShadow
+          />
+        </>
+      ) : (
+        <>
+          {/* Neutral studio geographic lighting ensuring complete 3D sphere is visible before observation */}
+          <ambientLight intensity={0.65} color="#ffffff" />
+          <directionalLight position={[6, 4, 8]} intensity={1.6} color="#ffffff" />
+          <directionalLight position={[-6, -2, -6]} intensity={0.45} color="#90a0b8" />
+        </>
       )}
 
-      {/* Spherical Moon */}
+      {/* Spherical Moon with reliable visible fallback */}
       <mesh
         data-testid="global-moon-sphere"
         onClick={handleGlobeClick}
       >
         <sphereGeometry args={[MOON_RADIUS, 64, 64]} />
         <meshStandardMaterial
+          color="#9da0a8"
           map={moonTexture}
-          roughness={0.92}
-          metalness={0.04}
+          roughness={0.88}
+          metalness={0.03}
         />
       </mesh>
 
@@ -617,8 +544,23 @@ export const GlobalMoonScene: React.FC<GlobalMoonSceneProps> = ({
           )}
         </div>
 
-        {/* View Presets & Camera Reset (Task 1) */}
+        {/* View Presets & Camera Reset (Task 1 & 3) */}
         <div style={{ display: 'flex', gap: '5px' }}>
+          {activeCoord && (
+            <button
+              type="button"
+              className="secondary-button"
+              style={{ padding: '2px 6px', fontSize: '0.7rem' }}
+              onClick={() => {
+                const p = latLonToGlobalScene(activeCoord, MOON_RADIUS * 2.8)
+                setCameraPreset([p.x, p.y, p.z])
+              }}
+              title="Focus camera on selected landing site"
+              data-testid="focus-site-btn"
+            >
+              Focus Site
+            </button>
+          )}
           <button
             type="button"
             className="secondary-button"
@@ -754,7 +696,7 @@ export const GlobalMoonScene: React.FC<GlobalMoonSceneProps> = ({
         )}
       </div>
 
-      {/* Provenance and Legend Footer */}
+      {/* Provenance and Navigation Footer matching Image 2 */}
       <div
         className="global-moon-footer"
         data-testid="global-moon-footer"
@@ -771,9 +713,11 @@ export const GlobalMoonScene: React.FC<GlobalMoonSceneProps> = ({
         }}
       >
         <span>
-          MCMF global frame · Sphere radius 1,737.4 km reference · Drag to orbit, scroll to zoom
+          CLICK: PIN | DRAG: ROTATE | SCROLL: ZOOM | DOUBLE-CLICK: RECENTER
         </span>
-        <span>Backend Earth visibility authoritative · Link line is a visual aid</span>
+        <span>
+          MCMF global frame · Sphere radius 1,737.4 km reference · Backend Earth visibility authoritative · Link line is a visual aid
+        </span>
       </div>
 
       {/* Loading Overlay */}

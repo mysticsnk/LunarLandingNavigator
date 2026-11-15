@@ -412,5 +412,29 @@ describe('LunarScene component and coordinate orientation', () => {
         /Earth: Az 0.0° · El 3.0° \(Hrz 4.1°\) \(Not visible\)/,
       )
     })
+
+    it('displays explicit terrain-unavailable notice when no heightmap is loaded (Task 5)', () => {
+      render(
+        <LunarScene
+          observationPoint={null}
+          heightmap={null}
+        />,
+      )
+
+      expect(screen.getByTestId('terrain-unavailable-notice')).toBeInTheDocument()
+      expect(
+        screen.getByText(/No display heightmap loaded/i),
+      ).toBeInTheDocument()
+      expect(screen.queryByText(/DEM available for Shackleton/i)).not.toBeInTheDocument()
+    })
+
+    it('does not describe missing terrain display data as a geometric fallback in terrain mode', () => {
+      render(<LunarScene horizonMode="terrain" observationPoint={null} heightmap={null} />)
+
+      expect(screen.getByTestId('terrain-unavailable-notice')).toHaveTextContent(
+        'Terrain visibility remains API-provided.',
+      )
+      expect(screen.queryByText(/Displaying geometric horizon reference/i)).not.toBeInTheDocument()
+    })
   })
 })
