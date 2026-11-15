@@ -111,3 +111,57 @@ class TimelineRequest(BaseModel):
         if end_time > MAX_SUPPORTED_TIME:
             raise ValueError("start_time + duration_days must not exceed 2050-01-01T00:00:00Z")
         return self
+
+
+class ComparisonScenario(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    label: str = Field(min_length=1)
+    site: CatalogSite | CustomSite
+    start_time: AwareDatetime
+
+    @field_validator("site", mode="before")
+    @classmethod
+    def select_site_form(cls, value):
+        if isinstance(value, dict):
+            model = CatalogSite if "site_id" in value else CustomSite
+            return model.model_validate(value)
+        return value
+
+    @field_validator("start_time", mode="before")
+    @classmethod
+    def require_iso_string(cls, value):
+        if not isinstance(value, str) or "T" not in value.upper():
+            raise ValueError("start_time must be an ISO 8601 string with a timezone")
+        return value
+
+    @field_validator("start_time")
+    @classmethod
+    def supported_start_time(cls, value: datetime) -> datetime:
+        value = value.astimezone(UTC)
+        if not MIN_SUPPORTED_TIME <= value < MAX_SUPPORTED_TIME:
+            raise ValueError("start_time must be within [2000-01-01, 2050-01-01) UTC")
+        if value.microsecond:
+            raise ValueError("start_time supports whole seconds")
+        return value
+
+
+class ComparisonRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    scenarios: Annotated[list[ComparisonScenario], Field(min_length=2, max_length=6)]
+    duration_days: Annotated[int, Field(strict=True, ge=1, le=30)]
+    step_minutes: TimelineStep
+    horizon_mode: Literal["geometric", "terrain"]
+    observer_height_m: Annotated[float, Field(strict=True, ge=0, le=20, allow_inf_nan=False)] = 2.0
+    visibility_margin_deg: Annotated[float, Field(strict=True, ge=0, le=5, allow_inf_nan=False)] = (
+        0.0
+    )
+
+    @model_validator(mode="after")
+    def unique_labels_and_supported_periods(self):
+        labels = [scenario.label for scenario in self.scenarios]
+        if len(labels) != len(set(labels)):
+            raise ValueError("scenario labels must be unique")
+        for scenario in self.scenarios:
+            if scenario.start_time + timedelta(days=self.duration_days) > MAX_SUPPORTED_TIME:
+                raise ValueError("scenario period must not exceed 2050-01-01T00:00:00Z")
+        return self

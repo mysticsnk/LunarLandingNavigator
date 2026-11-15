@@ -225,9 +225,8 @@ button:disabled {
   margin-bottom: 0.65rem;
 }
 .visual-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
+  display: contents;
+  gap: 0.85rem;
   min-width: 0;
 }
 .visual-card > .muted {
@@ -235,9 +234,29 @@ button:disabled {
   margin-bottom: 0.8rem;
   min-height: 2.3rem;
 }
-.map-viewport,
-.scene-viewport {
-  height: 340px;
+.site-inspector-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem 0.75rem;
+  font-size: 0.76rem;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.site-inspector-label {
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.site-inspector-value {
+  color: var(--color-text-primary);
+  font-family: var(--font-mono, monospace);
+  text-align: right;
+  font-weight: 600;
 }
 .card-heading {
   display: flex;

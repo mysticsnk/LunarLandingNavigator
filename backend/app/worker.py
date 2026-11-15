@@ -18,8 +18,8 @@ from app.astronomy import (
 from app.core.config import get_settings
 from app.core.problems import APIProblem
 from app.requests import canonical_time
-from app.results import NowResult, TimelineResult
-from app.storage import get_repository, iso, utcnow
+from app.results import ComparisonMeta, ComparisonResult, NowResult, Source, TimelineResult
+from app.storage import get_repository, iso, request_key, utcnow
 
 LOGGER = logging.getLogger(__name__)
 HORIZONS_LOCK = 740101
@@ -175,12 +175,99 @@ def execute_timeline(normalized, provider=None):
     }
 
 
+def execute_comparison(normalized, provider=None, repository=None):
+    from app.comparison import ScenarioEvaluationInput, evaluate_comparison
+
+    settings = get_settings()
+    repository = repository or get_repository()
+    provider = provider or HorizonsProvider(
+        timeout=settings.horizons_timeout_seconds, max_retries=1
+    )
+    evaluations = []
+    sources = []
+    for scenario in normalized["scenarios"]:
+        cached = repository.cache_result(request_key(scenario))
+        if cached is not None:
+            timeline = deepcopy(cached)
+            timeline["site"] = scenario["site"]
+            timeline["meta"]["data_status"] = "cached"
+        else:
+            timeline = execute_timeline(scenario, provider=provider)
+        timeline = TimelineResult.model_validate(timeline).model_dump(mode="json")
+        evaluations.append(
+            ScenarioEvaluationInput.from_timeline(
+                label=scenario["label"],
+                timeline=timeline,
+                site=timeline["site"],
+            )
+        )
+        for raw_source in timeline["meta"]["sources"]:
+            source = Source.model_validate(raw_source)
+            if source not in sources:
+                sources.append(source)
+
+    result = evaluate_comparison(
+        evaluations,
+        meta=ComparisonMeta(
+            model_version=normalized["model_version"],
+            generated_at=utcnow(),
+            data_status="fresh",
+            horizon_mode=normalized["horizon_mode"],
+            time_resolution_minutes=normalized["step_minutes"],
+            terrain_dataset_id=normalized["terrain_dataset_id"],
+            sources=sources,
+        ),
+    )
+    return result.model_dump(mode="json")
+
+
+def validate_comparison_result(result, normalized):
+    scenarios = normalized["scenarios"]
+    by_label = {scenario["label"]: scenario for scenario in scenarios}
+    if set(by_label) != {scenario.label for scenario in result.ranked_scenarios}:
+        raise ValueError("Comparison service changed the requested scenario labels")
+    original_order = {scenario["label"]: index for index, scenario in enumerate(scenarios)}
+    expected_order = sorted(
+        result.ranked_scenarios,
+        key=lambda scenario: (
+            -scenario.score,
+            -scenario.summary.longest_golden_window_hours,
+            original_order[scenario.label],
+        ),
+    )
+    if result.ranked_scenarios != expected_order:
+        raise ValueError("Comparison service returned scenarios in an invalid ranking order")
+    if (
+        result.meta.horizon_mode != normalized["horizon_mode"]
+        or result.meta.time_resolution_minutes != normalized["step_minutes"]
+        or result.meta.model_version != normalized["model_version"]
+        or result.meta.terrain_dataset_id != normalized["terrain_dataset_id"]
+    ):
+        raise ValueError("Comparison service changed shared calculation metadata")
+    for scenario in result.ranked_scenarios:
+        expected = by_label[scenario.label]
+        expected_start = canonical_time(expected["start_time"])
+        expected_end = canonical_time(expected["end_time"])
+        if (
+            scenario.site.model_dump(mode="json") != expected["site"]
+            or canonical_time(scenario.start_time.isoformat()) != expected_start
+            or canonical_time(scenario.end_time.isoformat()) != expected_end
+            or scenario.provenance.model_version != expected["model_version"]
+            or scenario.provenance.terrain_dataset_id != expected.get("terrain_dataset_id")
+        ):
+            raise ValueError("Comparison service changed a scenario or its provenance")
+        if any(source not in result.meta.sources for source in scenario.provenance.sources):
+            raise ValueError("Comparison metadata omitted a scenario source")
+
+
 def execute_job(normalized):
     kind = normalized.get("kind", "now")
     if kind == "now":
         return execute_observation(normalized)
     if kind == "timeline":
         return execute_timeline(normalized)
+    if kind == "comparison":
+        return execute_comparison(normalized)
     raise APIProblem(500, "INTERNAL_ERROR", "Unknown calculation job kind")
 
 
@@ -260,12 +347,20 @@ def run_once(repository, executor=isolated_execution):
             result = repository.cache_result(job["cache_key"])
             if result is not None:
                 result = deepcopy(result)
-                result["site"] = job["normalized"]["site"]
+                if job["kind"] != "comparison":
+                    result["site"] = job["normalized"]["site"]
                 result["meta"]["data_status"] = "cached"
             else:
                 result = executor(job["normalized"])
-            result_model = TimelineResult if job["kind"] == "timeline" else NowResult
-            result = result_model.model_validate(result).model_dump(mode="json")
+            result_model = {
+                "now": NowResult,
+                "timeline": TimelineResult,
+                "comparison": ComparisonResult,
+            }[job["kind"]]
+            validated_result = result_model.model_validate(result)
+            if job["kind"] == "comparison":
+                validate_comparison_result(validated_result, job["normalized"])
+            result = validated_result.model_dump(mode="json")
             repository.finish(
                 job,
                 result=result,

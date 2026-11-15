@@ -27,7 +27,7 @@ from app.comparison import (
 ### Primary Interface Functions
 
 1. **`evaluate_comparison(scenarios, meta, precision=2) -> ComparisonResult`**:
-   - Takes a list of 2–6 scenarios (`ScenarioEvaluationInput` or dictionaries) and shared result metadata `Meta`.
+   - Takes a list of 2–6 scenarios (`ScenarioEvaluationInput` or dictionaries) and shared result metadata `ComparisonMeta`.
    - Returns a validated `ComparisonResult` object conforming to the OpenAPI v1 schema.
 
 2. **`evaluate_scenarios(scenarios, precision=2) -> tuple[list[RankedScenario], str]`**:
@@ -54,6 +54,7 @@ class ScenarioEvaluationInput(BaseModel):
     start_time: AwareDatetime  # Requested start instant
     end_time: AwareDatetime  # Calculated end instant (start_time + duration_days)
     summary: TimelineSummary | Summary  # Validated timeline metrics
+    provenance: ScenarioProvenance  # Model, terrain dataset, and sources for this scenario
 ```
 
 Convenience constructor from timeline results:

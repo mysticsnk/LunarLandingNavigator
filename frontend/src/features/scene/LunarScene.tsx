@@ -499,6 +499,30 @@ export const LunarScene: React.FC<LunarSceneProps> = (props) => {
         </div>
       )}
 
+      {/* Explicit unavailable state when numerical terrain DEM is not available for site (Task 5) */}
+      {!heightmap && !isSceneLoading && !terrainError && (
+        <div
+          data-testid="terrain-unavailable-notice"
+          style={{
+            padding: '3px 10px',
+            backgroundColor: 'rgba(30, 32, 44, 0.65)',
+            borderTop: '1px solid #282a36',
+            color: '#8c90a4',
+            fontSize: '0.68rem',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <span>
+            No numerical terrain DEM loaded for this site. Displaying geometric horizon reference.
+          </span>
+          <span style={{ fontSize: '0.62rem', color: '#6a6e82' }}>
+            DEM available for Shackleton Connecting Ridge
+          </span>
+        </div>
+      )}
+
       {/* Bottom Terrain Reference Notice */}
       <div
         className="scene-horizon-notice"

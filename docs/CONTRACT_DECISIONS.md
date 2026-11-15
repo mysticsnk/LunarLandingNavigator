@@ -74,12 +74,13 @@ future implementation.
 ## Still pending
 
 Agree the exact lunar horizontal and vertical frames with Denys and Bohdan, and
-review the wire details above before implementing planned endpoints. A terrain
-comparison may span several datasets while meta.terrain_dataset_id is singular;
-agree its representation before implementation rather than inventing a combined ID. Live CSA
-verification is now complete using the explicit TLS 1.2 option; actual Atom feed
-observations are documented in sources/csa.md. The observed five entries had no
-matching Moon keywords; no production CSA endpoint has been implemented.
+review remaining planned endpoint details before implementation. The owner
+approved per-scenario comparison provenance: each ranked scenario carries its
+model_version, terrain_dataset_id and used sources. Comparison meta.terrain_dataset_id
+is the shared dataset only when all terrain scenarios use that dataset; otherwise
+it is null. Live CSA verification is complete using the explicit TLS 1.2 option;
+actual Atom feed observations are documented in sources/csa.md. The observed five
+entries had no matching Moon keywords; no production CSA endpoint has been implemented.
 
 
 ## Stage 1 implementation decisions (2026-11-14)

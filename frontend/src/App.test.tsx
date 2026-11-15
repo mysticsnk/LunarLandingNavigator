@@ -49,6 +49,9 @@ vi.mock('./features/scene', () => ({
     visual.scene(props)
     return <div data-testid="scene-integration" />
   },
+  GlobalMoonScene: () => {
+    return <div data-testid="global-moon-integration" />
+  },
   useHeightmap: vi.fn(() => ({
     heightmap: null,
     loading: false,
@@ -237,7 +240,7 @@ describe('Lunar Navigator workstation', () => {
     }, expect.any(Object))
     await act(async () => vi.advanceTimersByTimeAsync(2000))
     const results = screen.getByRole('region', { name: 'Comparison results' })
-    expect(within(results).getByText('Synthetic A')).toBeInTheDocument()
+    expect(within(results).getAllByText('Synthetic A')).toHaveLength(2)
     expect(within(results).getAllByText('67.5')).toHaveLength(2)
     const rows = within(results).getAllByRole('row')
     expect(rows[1]).toHaveTextContent('1')
@@ -245,6 +248,9 @@ describe('Lunar Navigator workstation', () => {
     expect(rows[2]).toHaveTextContent('2')
     expect(rows[2]).toHaveTextContent('Synthetic B')
     expect(within(results).getByText(/40% sunlight.*30% Earth visibility.*30% golden-window/)).toBeInTheDocument()
+    fireEvent.click(within(results).getByText('Comparison provenance'))
+    expect(within(results).getByText('Scenario data provenance')).toBeInTheDocument()
+    expect(within(results).getByText(/Model development-fixture-v1 · terrain dataset none/)).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Global Moon view' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Local terrain inspector' })).toBeInTheDocument()
     expect(screen.getByText('CSA resources', { selector: 'summary' })).toBeInTheDocument()

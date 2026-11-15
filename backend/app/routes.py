@@ -7,9 +7,9 @@ from fastapi.exceptions import RequestValidationError
 from starlette.concurrency import run_in_threadpool
 
 from app.core.problems import ErrorEnvelope
-from app.requests import Category, NowRequest, TimelineRequest
+from app.requests import Category, ComparisonRequest, NowRequest, TimelineRequest
 from app.resources import get_resources
-from app.results import Heightmap, NowResult, TerrainCoverage, TimelineResult
+from app.results import ComparisonResult, Heightmap, NowResult, TerrainCoverage, TimelineResult
 from app.storage import Repository, get_repository
 
 
@@ -118,6 +118,16 @@ async def submit_timeline(payload: TimelineRequest, request: Request, repository
     )
 
 
+@router.post("/ephemeris/compare", status_code=202, dependencies=[Depends(query_fields())])
+async def submit_comparison(payload: ComparisonRequest, request: Request, repository: Repo):
+    return await run_in_threadpool(
+        repository.submit,
+        payload,
+        request.state.request_id,
+        submitted=await request.json(),
+    )
+
+
 @router.get("/jobs/{job_id}", dependencies=[Depends(query_fields())])
 def job_status(job_id: UUID, repository: Repo):
     return repository.status(str(job_id))
@@ -125,7 +135,7 @@ def job_status(job_id: UUID, repository: Repo):
 
 @router.get(
     "/jobs/{job_id}/result",
-    response_model=NowResult | TimelineResult,
+    response_model=NowResult | TimelineResult | ComparisonResult,
     dependencies=[Depends(query_fields())],
 )
 def job_result(job_id: UUID, repository: Repo):

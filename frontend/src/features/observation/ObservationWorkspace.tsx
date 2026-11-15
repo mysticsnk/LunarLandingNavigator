@@ -5,7 +5,7 @@ import type { Site, SiteList, LayerList, TerrainCoverage } from '../../api/types
 import { SourceLink } from '../../components/SourceLink'
 import { RequestError } from '../../components/RequestError'
 import { LunarMap } from '../map'
-import { LunarScene, useHeightmap } from '../scene'
+import { LunarScene, GlobalMoonScene, useHeightmap } from '../scene'
 import {
   buildRequest,
   buildTimelineRequest,
@@ -53,6 +53,7 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
   const timeline = useTimeline()
   const comparison = useComparison()
   const playback = useTimelinePlayback(timeline.result)
+  const [layoutMode, setLayoutMode] = useState<'split' | 'enlarge-global' | 'enlarge-local'>('split')
 
   useEffect(() => {
     if (workflow !== 'comparison') return
@@ -226,8 +227,12 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
     setCoverage(null)
     setCoverageState(frozen.horizon_mode === 'terrain' ? 'checking' : 'idle')
     setDraft(nextDraft)
-    onWorkflowChange('timeline')
-    setInspectedComparison({ label, model: comparison.result!.meta.model_version, dataset: comparison.result!.meta.terrain_dataset_id })
+        onWorkflowChange('timeline')
+    setInspectedComparison({
+      label,
+      model: ranked.provenance.model_version,
+      dataset: ranked.provenance.terrain_dataset_id,
+    })
     void timeline.submit(request)
   }
 
@@ -608,65 +613,175 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
           </details>
         </aside>
         <div className="grid-content">
-          <div className="visual-grid">
+          <div className="visual-grid" data-layout-mode={layoutMode}>
             <section
-              className="workspace-card visual-card"
+              className={`workspace-card visual-card ${layoutMode === 'enlarge-global' ? 'visual-card-enlarged' : ''}`}
               aria-labelledby="map-heading"
+              style={layoutMode === 'enlarge-global' ? { gridColumn: '1 / -1' } : undefined}
             >
-              <h2 id="map-heading">Global Moon view</h2>
-              <p className="muted">
-                Global lunar projection; click to select a location.
-              </p>
-              <div className="map-viewport">
-                {!mapLayers && !mapError && (
-                  <p role="status">Loading map layers...</p>
-                )}
-                {mapError && <RequestError error={mapError} />}
-                {mapLayers?.items.length === 0 && (
-                  <p>No registered map layers are available.</p>
-                )}
-                {mapError && (
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => {
-                      setMapError(null)
-                      setMapAttempt((value) => value + 1)
-                    }}
-                  >
-                    Retry map layers
-                  </button>
-                )}
-                {!!mapLayers?.items.length && (
-                  <LunarMap
-                    layers={mapLayers.items}
-                    quickmapUrl={activeCatalogSite?.quickmap_url ?? null}
-                    selectedCoordinate={coordinate || null}
-                    selectedSiteId={displayedSite?.site_id ?? (draft.mode === 'catalog' ? draft.site?.id : null)}
-                    onSelectCoordinate={(value) =>
-                      change({
-                        mode: 'custom',
-                        latitude: String(value.latitude),
-                        longitude: String(value.longitude),
-                      })
-                    }
-                  />
-                )}
+              <div className="card-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 id="map-heading">Global Moon view</h2>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  style={{ padding: '2px 8px', fontSize: '0.72rem' }}
+                  onClick={() => setLayoutMode(layoutMode === 'enlarge-global' ? 'split' : 'enlarge-global')}
+                  title="Toggle enlarged view for Global Moon"
+                  data-testid="toggle-enlarge-global"
+                >
+                  {layoutMode === 'enlarge-global' ? 'Restore Split' : 'Enlarge Globe'}
+                </button>
               </div>
+              <p className="muted">
+                Complete spherical Moon in MCMF coordinates with active Earth communication link · drag to orbit, scroll to zoom.
+              </p>
+
+              {/* 3D Global Moon Viewport (Dominant Stage 5 view) */}
+              <div
+                className="map-viewport"
+                data-testid="global-moon-viewport"
+                style={{
+                  height: layoutMode === 'enlarge-global' ? '520px' : '360px',
+                  marginBottom: '10px',
+                }}
+              >
+                <GlobalMoonScene
+                  catalogSites={catalog?.items}
+                  selectedSite={effectiveSite}
+                  selectedCoordinate={coordinate || null}
+                  observationPoint={selectedPoint}
+                  isLoading={busy}
+                  dataStatus={(workflow === 'timeline' ? timelineResult?.meta.data_status : result?.meta.data_status) ?? null}
+                  onSelectCoordinate={(val) =>
+                    change({
+                      mode: 'custom',
+                      latitude: String(val.latitude),
+                      longitude: String(val.longitude),
+                    })
+                  }
+                  onSelectSite={(site) => {
+                    change({
+                      mode: 'catalog',
+                      site,
+                      latitude: String(site.latitude),
+                      longitude: String(site.longitude),
+                    })
+                  }}
+                />
+              </div>
+
+              {/* Registered 2D Layer Map with Layer Switching */}
+              {!mapLayers && !mapError && (
+                <p role="status">Loading map layers...</p>
+              )}
+              {mapError && <RequestError error={mapError} />}
+              {mapLayers?.items.length === 0 && (
+                <p>No registered map layers are available.</p>
+              )}
+              {mapError && (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => {
+                    setMapError(null)
+                    setMapAttempt((value) => value + 1)
+                  }}
+                >
+                  Retry map layers
+                </button>
+              )}
+              {!!mapLayers?.items.length && (
+                <details className="layer-map-drawer" style={{ marginTop: '8px' }}>
+                  <summary style={{ cursor: 'pointer', fontSize: '0.75rem', color: '#a0a5b5', padding: '4px 0' }}>
+                    2D Projections & Map Layers (LROC / Moon Trek)
+                  </summary>
+                  <div style={{ marginTop: '6px' }}>
+                    <LunarMap
+                      layers={mapLayers.items}
+                      quickmapUrl={activeCatalogSite?.quickmap_url ?? null}
+                      selectedCoordinate={coordinate || null}
+                      selectedSiteId={displayedSite?.site_id ?? (draft.mode === 'catalog' ? draft.site?.id : null)}
+                      onSelectCoordinate={(value) =>
+                        change({
+                          mode: 'custom',
+                          latitude: String(value.latitude),
+                          longitude: String(value.longitude),
+                        })
+                      }
+                    />
+                  </div>
+                </details>
+              )}
               <p className="field-help">
-                Registered Moon Trek / LROC imagery. Numerical terrain is shown
-                in the local scene when available.
+                Spherical MCMF frame with authoritative Earth/Sun vectors and communication line. Registered Moon Trek / LROC imagery below.
               </p>
             </section>
             <section
-              className="workspace-card visual-card"
+              className={`workspace-card visual-card ${layoutMode === 'enlarge-local' ? 'visual-card-enlarged' : ''}`}
               aria-labelledby="scene-heading"
+              style={layoutMode === 'enlarge-local' ? { gridColumn: '1 / -1' } : undefined}
             >
-              <h2 id="scene-heading">Local terrain inspector</h2>
+              <div className="card-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 id="scene-heading">Local terrain inspector</h2>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  style={{ padding: '2px 8px', fontSize: '0.72rem' }}
+                  onClick={() => setLayoutMode(layoutMode === 'enlarge-local' ? 'split' : 'enlarge-local')}
+                  title="Enlarge local terrain inspector"
+                  data-testid="toggle-enlarge-local"
+                >
+                  {layoutMode === 'enlarge-local' ? 'Restore Split' : 'Enlarge Scene'}
+                </button>
+              </div>
+
+              {/* Site Inspector Summary Panel matching Image 2 */}
+              <div className="site-inspector-grid" data-testid="site-inspector-panel">
+                <span className="site-inspector-label">
+                  <span aria-hidden="true">📍</span> Site
+                </span>
+                <span className="site-inspector-value">
+                  {effectiveSite ? `${effectiveSite.name} (active)` : (coordinate ? `${coordinate.latitude.toFixed(2)}°, ${coordinate.longitude.toFixed(2)}°` : '—')}
+                </span>
+
+                <span className="site-inspector-label">
+                  <span aria-hidden="true">☀️</span> Sun elevation
+                </span>
+                <span className="site-inspector-value">
+                  {selectedPoint ? `${selectedPoint.sun.elevation_deg.toFixed(1)}°` : '—'}
+                </span>
+
+                <span className="site-inspector-label">
+                  <span aria-hidden="true">🌐</span> Earth visibility
+                </span>
+                <span className="site-inspector-value" style={{ color: selectedPoint?.earth.visible ? '#00f0ff' : selectedPoint ? '#9da0a8' : undefined }}>
+                  {selectedPoint ? (selectedPoint.earth.visible ? 'Visible' : 'Blocked') : '—'}
+                </span>
+
+                <span className="site-inspector-label">
+                  <span aria-hidden="true">⛰️</span> Horizon mode
+                </span>
+                <span className="site-inspector-value">
+                  {((workflow === 'comparison' ? comparisonResult?.meta.horizon_mode : workflow === 'timeline' ? timelineResult?.meta.horizon_mode : result?.meta.horizon_mode) ?? draft.horizonMode) === 'terrain' ? 'Terrain' : 'Geometric'}
+                </span>
+
+                <span className="site-inspector-label">
+                  <span aria-hidden="true">⏱️</span> Source freshness
+                </span>
+                <span className="site-inspector-value">
+                  {(workflow === 'timeline' ? timelineResult?.meta.data_status : result?.meta.data_status) ?? '—'}
+                </span>
+              </div>
+
               <p className="muted">
                 Schematic local ENU scene · directions from the observation API.
               </p>
-              <div className="scene-viewport">
+              <div
+                className="scene-viewport"
+                style={{
+                  height: layoutMode === 'enlarge-local' ? '560px' : undefined,
+                }}
+              >
                 <LunarScene
                   observationPoint={selectedPoint}
                   site={effectiveSite}
@@ -675,7 +790,7 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
                   earthDirectionEnu={selectedPoint?.earth.direction_enu ?? null}
                   observerHeightM={workflow === 'comparison' ? comparison.resultRequest?.observer_height_m : workflow === 'timeline' ? timelineResult?.site.observer_height_m : result?.site.observer_height_m ?? Number(draft.height)}
                   horizonMode={(workflow === 'comparison' ? comparisonResult?.meta.horizon_mode : workflow === 'timeline' ? timelineResult?.meta.horizon_mode : result?.meta.horizon_mode) ?? draft.horizonMode}
-                  terrainDatasetId={(workflow === 'comparison' ? comparisonResult?.meta.terrain_dataset_id : workflow === 'timeline' ? timelineResult?.meta.terrain_dataset_id : result?.meta.terrain_dataset_id) ?? null}
+                  terrainDatasetId={(workflow === 'comparison' ? comparisonResult?.ranked_scenarios[0]?.provenance.terrain_dataset_id : workflow === 'timeline' ? timelineResult?.meta.terrain_dataset_id : result?.meta.terrain_dataset_id) ?? null}
                   visibilityMarginDeg={workflow === 'comparison' ? comparison.resultRequest?.visibility_margin_deg : workflow === 'now' && result ? observation.resultRequest?.visibility_margin_deg : Number(draft.margin)}
                   isLoading={busy}
                   heightmap={heightmap}
@@ -724,7 +839,7 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
             <p><strong>Recommendation:</strong> {comparisonResult.recommended_label}. {comparisonResult.recommendation_reason}</p>
             <p className="field-help">v1 product score = 40% sunlight + 30% Earth visibility + 30% golden-window time. It is not an official NASA safety certification. Equal displayed scores may retain different backend ranks because ranking uses unrounded values and tie-breaks.</p>
             <div className="table-scroll"><table className="observation-table"><caption>Backend rank and returned metrics, in backend order</caption><thead><tr><th>Rank</th><th>Scenario / site</th><th>Start (UTC)</th><th>Sunlit</th><th>Earth visible</th><th>Golden</th><th>Longest golden</th><th>Score</th><th>Detail</th></tr></thead><tbody>{comparisonResult.ranked_scenarios.map((item) => <tr key={item.rank}><td>{item.rank}</td><th scope="row">{item.label}<br /><span className="muted">{item.site.name}</span></th><td>{item.start_time}</td><td>{item.summary.sunlit_pct}%</td><td>{item.summary.earth_visible_pct}%</td><td>{item.summary.golden_pct}%</td><td>{item.summary.longest_golden_window_hours} h</td><td>{item.score.toFixed(1)}</td><td><button type="button" className="secondary-button" onClick={() => inspectComparedScenario(item.label)}>Open timeline</button></td></tr>)}</tbody></table></div>
-            <details><summary>Comparison provenance</summary><p>Model {comparisonResult.meta.model_version} · {comparisonResult.meta.horizon_mode} · {comparisonResult.meta.time_resolution_minutes} minute samples · terrain dataset {comparisonResult.meta.terrain_dataset_id ?? 'none'}</p><ul className="source-list">{comparisonResult.meta.sources.map((source, index) => <li key={`${source.name}-${index}`}><SourceLink url={source.url}>{source.name}</SourceLink><p className="muted">Version {source.version ?? 'not reported'} · Retrieved {source.fetched_at}</p></li>)}</ul></details>
+            <details><summary>Comparison provenance</summary><p>Ranking model {comparisonResult.meta.model_version} · {comparisonResult.meta.horizon_mode} · {comparisonResult.meta.time_resolution_minutes} minute samples · shared terrain dataset {comparisonResult.meta.terrain_dataset_id ?? 'multiple or none'}</p><h3>Scenario data provenance</h3><ul className="source-list">{comparisonResult.ranked_scenarios.map((scenario) => <li key={scenario.label}><strong>{scenario.label}</strong><p className="muted">Model {scenario.provenance.model_version} · terrain dataset {scenario.provenance.terrain_dataset_id ?? 'none'}</p><ul>{scenario.provenance.sources.map((source, index) => <li key={`${source.name}-${index}`}><SourceLink url={source.url}>{source.name}</SourceLink><p className="muted">Version {source.version ?? 'not reported'} · Retrieved {source.fetched_at}</p></li>)}</ul></li>)}</ul></details>
           </section>}
           </div>
         </div>
