@@ -1,6 +1,44 @@
 .app-container {
   width: 100%;
 }
+.app-header { padding: .55rem 1.25rem; min-height: 48px; }
+.app-title { font-size: 1rem; }
+.app-main { padding: .75rem 1rem 1.25rem; }
+.workspace-intro { display: none; }
+.main-grid {
+  display: grid;
+  grid-template-columns: minmax(245px, 285px) minmax(0, 1fr) minmax(300px, .43fr);
+  grid-template-areas: 'controls global local' 'controls bottom bottom';
+  gap: .85rem;
+  max-width: 1900px;
+  align-items: start;
+}
+.grid-sidebar { grid-area: controls; gap: .75rem; max-height: calc(100vh - 65px); overflow: auto; }
+.grid-content, .visual-grid { display: contents; }
+.visual-card:first-child { grid-area: global; }
+.visual-card:nth-child(2) { grid-area: local; }
+.workstation-bottom { grid-area: bottom; display: flex; flex-direction: column; gap: .85rem; min-width: 0; }
+.visual-grid { gap: .85rem; }
+.workspace-card { padding: .95rem; border-radius: 9px; }
+.map-viewport { height: min(58vh, 620px); min-height: 430px; }
+.scene-viewport { height: min(48vh, 520px); min-height: 380px; }
+.comparison-scenario { padding: .7rem; margin: .55rem 0; background: var(--color-bg-primary); border: 1px solid var(--color-border); border-radius: 7px; }
+.comparison-results { overflow: hidden; }
+.comparison-results .observation-table { min-width: 980px; }
+.comparison-results details { margin-top: .8rem; }
+.comparison-results summary { cursor: pointer; }
+@media (max-width: 1250px) {
+  .main-grid { grid-template-columns: minmax(240px, 290px) minmax(0, 1fr); grid-template-areas: 'controls global' 'controls local' 'bottom bottom'; }
+  .map-viewport { height: 440px; min-height: 360px; }
+  .scene-viewport { height: 390px; min-height: 340px; }
+}
+@media (max-width: 850px) {
+  .main-grid { display: flex; flex-direction: column; }
+  .grid-sidebar { width: 100%; max-height: none; overflow: visible; }
+  .visual-card, .workstation-bottom { width: 100%; }
+  .map-viewport { height: 360px; min-height: 300px; }
+  .scene-viewport { height: 360px; min-height: 320px; }
+}
 .workspace-intro {
   max-width: 1600px;
   margin: 0 auto 1.75rem;

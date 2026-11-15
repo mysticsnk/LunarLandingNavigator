@@ -16,6 +16,8 @@ import type {
   LayerList,
   TerrainCoverage,
   Heightmap,
+  ComparisonRequest,
+  ComparisonResult,
 } from './types'
 
 export interface ApiClientConfig {
@@ -239,7 +241,7 @@ export class ApiClient {
   private async request<T>(
     path: string,
     options?: RequestOptions,
-    payload?: NowRequest | TimelineRequest,
+    payload?: NowRequest | TimelineRequest | ComparisonRequest,
     expectedStatus = 200,
   ): Promise<T> {
     if (options?.signal?.aborted) {
@@ -424,6 +426,17 @@ export class ApiClient {
     return value
   }
 
+  async submitComparison(payload: ComparisonRequest, options?: RequestOptions): Promise<JobAccepted> {
+    const value = await this.request<JobAccepted>(
+      '/api/v1/ephemeris/compare', options, payload, 202,
+    )
+    if (!value || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value.job_id) ||
+      value.kind !== 'comparison' || value.status !== 'queued' ||
+      value.status_url !== `/api/v1/jobs/${value.job_id}` ||
+      value.result_url !== `/api/v1/jobs/${value.job_id}/result`) invalidResponse()
+    return value
+  }
+
   private jobPath(path: string, result: boolean): string {
     const pattern =
       /^\/api\/v1\/jobs\/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}(\/result)?$/i
@@ -437,7 +450,7 @@ export class ApiClient {
     const value = await this.request<Job>(path, options)
     if (
       !value ||
-      !['now', 'timeline'].includes(value.kind) ||
+      !['now', 'timeline', 'comparison'].includes(value.kind) ||
       value.job_id !== path.split('/').pop() ||
       !['queued', 'running', 'succeeded', 'failed'].includes(value.status) ||
       (value.status === 'failed' && !apiError(value.error))
@@ -497,6 +510,30 @@ export class ApiClient {
       options,
     )
     if (!timelineResult(value)) invalidResponse()
+    return value
+  }
+
+  async getComparisonResult(resultUrl: string, options?: RequestOptions): Promise<ComparisonResult> {
+    const value = await this.request<ComparisonResult>(this.jobPath(resultUrl, true), options)
+    if (!record(value) || value.ranking_version !== 'v1' ||
+      !Array.isArray(value.ranked_scenarios) || value.ranked_scenarios.length < 2 || value.ranked_scenarios.length > 6 ||
+      typeof value.recommended_label !== 'string' || typeof value.recommendation_reason !== 'string' || !record(value.meta) ||
+      typeof value.meta.model_version !== 'string' || !utc(value.meta.generated_at) ||
+      !['fresh', 'cached'].includes(value.meta.data_status) || !['geometric', 'terrain'].includes(value.meta.horizon_mode) ||
+      ![15, 30, 60, 120, 180, 360].includes(value.meta.time_resolution_minutes as number) ||
+      !(value.meta.terrain_dataset_id === null || typeof value.meta.terrain_dataset_id === 'string') ||
+      !Array.isArray(value.meta.sources) || value.meta.sources.length === 0 || !value.meta.sources.every((source) =>
+        record(source) && typeof source.name === 'string' && typeof source.url === 'string' &&
+        (source.version === null || typeof source.version === 'string') && utc(source.fetched_at)) ||
+      !value.ranked_scenarios.every((scenario, index) => record(scenario) && scenario.rank === index + 1 &&
+        typeof scenario.label === 'string' && record(scenario.site) && typeof scenario.site.name === 'string' &&
+        number(scenario.site.latitude, -90, 90) && number(scenario.site.longitude, -180, 180) && scenario.site.longitude !== 180 &&
+        utc(scenario.start_time) && utc(scenario.end_time) && number(scenario.score, 0, 100) && record(scenario.summary) &&
+        number(scenario.summary.sunlit_pct, 0, 100) && number(scenario.summary.earth_visible_pct, 0, 100) &&
+        number(scenario.summary.golden_pct, 0, 100) && number(scenario.summary.longest_golden_window_hours, 0, 720)) ||
+      new Set(value.ranked_scenarios.map((scenario) => scenario.label)).size !== value.ranked_scenarios.length ||
+      value.ranked_scenarios[0]?.label !== value.recommended_label)
+      invalidResponse('Invalid comparison result')
     return value
   }
 

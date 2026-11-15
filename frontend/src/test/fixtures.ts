@@ -4,6 +4,8 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type {
   CSAResources,
+  ComparisonRequest,
+  ComparisonResult,
   Job,
   JobAccepted,
   NowRequest,
@@ -30,6 +32,9 @@ export const accepted = example<JobAccepted>('job-accepted-now')
 export const observationResult = example<NowResult>('observation-result')
 export const timelineAccepted = example<JobAccepted>('job-accepted')
 export const timelineResult = example<TimelineResult>('timeline-two-golden-windows')
+export const comparisonAccepted = example<JobAccepted>('job-accepted-comparison')
+export const comparisonResult = example<ComparisonResult>('comparison-result')
+export const comparisonRequest = example<ComparisonRequest>('comparison-request')
 export const queued: Job = { ...example<Job>('job-queued'), kind: 'now' }
 export const running: Job = { ...example<Job>('job-running'), kind: 'now' }
 export const failed: Job = { ...example<Job>('job-failed'), kind: 'now' }
@@ -38,6 +43,7 @@ export const succeeded: Job = {
   status: 'succeeded',
   finished_at: '2027-07-15T00:00:02Z',
 }
+export const comparisonSucceeded: Job = { ...succeeded, kind: 'comparison' }
 export const request: NowRequest = {
   site: { latitude: -89.44, longitude: 222.1 },
   target_time: '2027-07-15T00:00:00Z',

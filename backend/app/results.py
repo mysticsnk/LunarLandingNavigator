@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
-from app.astronomy import ObservationPoint
+from app.astronomy.observation import ObservationPoint
 
 
 class ResolvedSite(BaseModel):

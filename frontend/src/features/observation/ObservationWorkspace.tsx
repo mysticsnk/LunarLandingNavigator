@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { apiClient } from '../../api/client'
 import { ApiClientError } from '../../api/errors'
 import type { Site, SiteList, LayerList, TerrainCoverage } from '../../api/types'
@@ -19,6 +19,8 @@ import { TimelineAnalytics } from './TimelineAnalytics'
 import { ObservationResult } from './ObservationResult'
 import { CSAResources } from '../resources/CSAResources'
 import { HealthCard } from '../health/HealthCard'
+import { useComparison } from '../comparison/useComparison'
+import { buildComparisonRequest, newComparisonDraft } from './scenario'
 
 const phases = {
   idle: 'No observation requested',
@@ -33,7 +35,10 @@ const phases = {
 
 export function ObservationWorkspace() {
   const [draft, setDraft] = useState(initialScenario)
-  const [workflow, setWorkflow] = useState<'now' | 'timeline'>('now')
+  const [workflow, setWorkflow] = useState<'now' | 'timeline' | 'comparison'>('now')
+  const [comparisonScenarios, setComparisonScenarios] = useState(() => [newComparisonDraft(0), newComparisonDraft(1)])
+  const comparisonValidationVersion = useRef(0)
+  const [inspectedComparison, setInspectedComparison] = useState<{ label: string; model: string; dataset: string | null } | null>(null)
   const [category, setCategory] = useState<Site['category'] | ''>('')
   const [offset, setOffset] = useState(0)
   const [catalog, setCatalog] = useState<SiteList | null>(null)
@@ -44,6 +49,7 @@ export function ObservationWorkspace() {
   const [coverageState, setCoverageState] = useState<'idle' | 'checking' | 'supported' | 'unsupported' | 'error'>('idle')
   const observation = useObservation()
   const timeline = useTimeline()
+  const comparison = useComparison()
   const playback = useTimelinePlayback(timeline.result)
 
   const coverageCoordinate = useMemo(() => draft.mode === 'catalog' && draft.site
@@ -117,6 +123,7 @@ export function ObservationWorkspace() {
   }
 
   function change(patch: Partial<ScenarioDraft>) {
+    comparisonValidationVersion.current += 1
     observation.reset()
     timeline.reset()
     setValidation(null)
@@ -137,7 +144,8 @@ export function ObservationWorkspace() {
     setDraft(next)
   }
 
-  function selectWorkflow(next: 'now' | 'timeline') {
+  function selectWorkflow(next: 'now' | 'timeline' | 'comparison') {
+    comparisonValidationVersion.current += 1
     observation.reset()
     timeline.reset()
     setValidation(null)
@@ -146,7 +154,7 @@ export function ObservationWorkspace() {
 
   function submit(event: FormEvent) {
     event.preventDefault()
-    if (draft.horizonMode === 'terrain' && coverageState !== 'supported') {
+    if (workflow !== 'comparison' && draft.horizonMode === 'terrain' && coverageState !== 'supported') {
       setValidation(coverageState === 'checking' ? 'Terrain coverage is still being checked.' : coverageState === 'unsupported' ? 'Terrain is unavailable at this location. Choose geometric mode explicitly to continue.' : coverageState === 'error' ? 'Terrain coverage check failed. Retry the check before requesting terrain mode.' : 'Select a valid location to check terrain coverage.')
       return
     }
@@ -154,7 +162,28 @@ export function ObservationWorkspace() {
       setValidation(null)
       if (workflow === 'timeline')
         void timeline.submit(buildTimelineRequest(draft))
-      else void observation.submit(buildRequest(draft), coverage)
+      else if (workflow === 'comparison') {
+        const validationVersion = ++comparisonValidationVersion.current
+        const request = buildComparisonRequest(comparisonScenarios, draft)
+        void (async () => {
+          if (request.horizon_mode === 'terrain') {
+            const checks = await Promise.all(request.scenarios.map((scenario) => {
+              const coordinates = comparisonScenarios.find((item) => item.label.trim() === scenario.label)
+              const site = coordinates?.mode === 'catalog' ? coordinates.site : null
+              const latitude = site?.latitude ?? ('latitude' in scenario.site ? scenario.site.latitude : NaN)
+              const longitude = site?.longitude ?? ('longitude' in scenario.site ? scenario.site.longitude : NaN)
+              return apiClient.getTerrainCoverage(latitude, longitude)
+            }))
+            const unavailable = checks.findIndex((check) => !check.available)
+            if (validationVersion !== comparisonValidationVersion.current) return
+            if (unavailable >= 0) throw new Error(`Terrain is unavailable for ${request.scenarios[unavailable].label}; choose geometric mode explicitly or remove that scenario.`)
+            comparison.submit(request, Object.fromEntries(request.scenarios.map((scenario, index) => [scenario.label, checks[index]])))
+            return
+          }
+          if (validationVersion !== comparisonValidationVersion.current) return
+          comparison.submit(request)
+        })().catch((error) => { if (validationVersion === comparisonValidationVersion.current) setValidation(error instanceof Error ? error.message : 'Unable to validate comparison terrain coverage.') })
+      } else void observation.submit(buildRequest(draft), coverage)
     } catch (error) {
       observation.reset()
       timeline.reset()
@@ -162,18 +191,53 @@ export function ObservationWorkspace() {
     }
   }
 
+  function inspectComparedScenario(label: string) {
+    const frozen = comparison.resultRequest
+    const entry = frozen?.scenarios.find((scenario) => scenario.label === label)
+    const ranked = comparison.result?.ranked_scenarios.find((scenario) => scenario.label === label)
+    if (!frozen || !entry || !ranked) return
+    const site = entry.site
+    const catalogSite = 'site_id' in site ? catalog?.items.find((item) => item.id === site.site_id) ?? null : null
+    const nextDraft: ScenarioDraft = {
+      mode: catalogSite ? 'catalog' : 'custom', site: catalogSite,
+      name: 'name' in site ? site.name ?? ranked.site.name : ranked.site.name,
+      latitude: String(ranked.site.latitude), longitude: String(ranked.site.longitude),
+      utcTime: entry.start_time.slice(0, 19), durationDays: String(frozen.duration_days),
+      stepMinutes: String(frozen.step_minutes), height: String(frozen.observer_height_m),
+      margin: String(frozen.visibility_margin_deg), horizonMode: frozen.horizon_mode,
+    }
+    const request = {
+      site, start_time: entry.start_time, duration_days: frozen.duration_days,
+      step_minutes: frozen.step_minutes, horizon_mode: frozen.horizon_mode,
+      observer_height_m: frozen.observer_height_m, visibility_margin_deg: frozen.visibility_margin_deg,
+    }
+    observation.reset()
+    timeline.reset()
+    setCoverage(null)
+    setCoverageState(frozen.horizon_mode === 'terrain' ? 'checking' : 'idle')
+    setDraft(nextDraft)
+    setWorkflow('timeline')
+    setInspectedComparison({ label, model: comparison.result!.meta.model_version, dataset: comparison.result!.meta.terrain_dataset_id })
+    void timeline.submit(request)
+  }
+
   const result = observation.result
   const timelineResult = timeline.result
+  const comparisonResult = comparison.result
   const selectedPoint =
     workflow === 'timeline'
       ? timelineResult?.points[playback.activeIndex] ?? null
-      : result?.point ?? null
-  const activeJob = workflow === 'timeline' ? timeline : observation
+      : workflow === 'now' ? result?.point ?? null : null
+  const activeJob = workflow === 'timeline' ? timeline : workflow === 'comparison' ? comparison : observation
   const busy = activeJob.busy
   const latitude = Number(draft.latitude)
   const longitude = Number(draft.longitude)
   // The map owns coordinate transformations; wait for server normalization outside its accepted longitude range.
-  const displayedSite = workflow === 'timeline' ? timelineResult?.site : result?.site
+  const displayedSite = workflow === 'timeline'
+    ? timelineResult?.site
+    : workflow === 'comparison'
+      ? comparisonResult?.ranked_scenarios[0]?.site
+      : result?.site
   const effectiveSite =
     displayedSite ?? (draft.mode === 'catalog' ? draft.site : null)
   const activeCatalogSite =
@@ -185,7 +249,9 @@ export function ObservationWorkspace() {
         : null
   const displayedCoverage = workflow === 'now' && result
     ? observation.resultCoverage
-    : coverage
+    : workflow === 'comparison' && comparisonResult
+      ? comparison.resultCoverages[comparisonResult.ranked_scenarios[0].label] ?? null
+      : coverage
   const terrainRegionId = activeCatalogSite?.terrain_region_id ?? displayedCoverage?.region_id ?? null
   const {
     heightmap,
@@ -245,9 +311,13 @@ export function ObservationWorkspace() {
                     />{' '}
                     Timeline
                   </label>
+                  <label>
+                    <input type="radio" name="analysis-mode" checked={workflow === 'comparison'} onChange={() => selectWorkflow('comparison')} />{' '}
+                    Compare scenarios
+                  </label>
                 </div>
               </fieldset>
-              <fieldset>
+              <fieldset hidden={workflow === 'comparison'}>
                 <legend>Location</legend>
                 <div className="mode-switch">
                   <label>
@@ -430,9 +500,26 @@ export function ObservationWorkspace() {
                   </>
                 )}
               </fieldset>
+              {workflow === 'comparison' && <fieldset aria-label="Comparison scenarios">
+                <legend>Scenarios ({comparisonScenarios.length}/6)</legend>
+                {comparisonScenarios.map((scenario, index) => {
+                  const update = (patch: Partial<typeof scenario>) => { comparisonValidationVersion.current += 1; setComparisonScenarios((items) => items.map((item, i) => i === index ? { ...item, ...patch } : item)) }
+                  return <div className="comparison-scenario" key={index}>
+                    <div className="card-heading"><strong>Scenario {index + 1}</strong><button type="button" className="secondary-button" disabled={comparisonScenarios.length <= 2} onClick={() => { comparisonValidationVersion.current += 1; setComparisonScenarios((items) => items.filter((_, i) => i !== index)) }}>Remove</button></div>
+                    <label className="field">Unique label<input aria-label={`Scenario ${index + 1} label`} value={scenario.label} onChange={(event) => update({ label: event.target.value })} /></label>
+                    <div className="mode-switch"><label><input type="radio" name={`scenario-site-${index}`} checked={scenario.mode === 'catalog'} onChange={() => update({ mode: 'catalog' })} /> Catalog</label><label><input type="radio" name={`scenario-site-${index}`} checked={scenario.mode === 'custom'} onChange={() => update({ mode: 'custom' })} /> Custom</label></div>
+                    {scenario.mode === 'catalog' ? <label className="field">Site<select aria-label={`Scenario ${index + 1} site`} value={scenario.site?.id ?? ''} onChange={(event) => update({ site: catalog?.items.find((site) => site.id === event.target.value) ?? null })}><option value="">Choose a site</option>{catalog?.items.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label> : <>
+                      <label className="field">Custom site name<input value={scenario.name} onChange={(event) => update({ name: event.target.value })} /></label>
+                      <div className="field-pair"><label className="field">Latitude<input aria-label={`Scenario ${index + 1} latitude`} type="number" value={scenario.latitude} onChange={(event) => update({ latitude: event.target.value })} /></label><label className="field">Longitude east<input aria-label={`Scenario ${index + 1} longitude`} type="number" value={scenario.longitude} onChange={(event) => update({ longitude: event.target.value })} /></label></div>
+                    </>}
+                    <label className="field">Start date and time (UTC)<input aria-label={`Scenario ${index + 1} start time`} type="datetime-local" step="1" min="2000-01-01T00:00:00" max="2049-12-31T23:59:59" value={scenario.utcTime} onChange={(event) => update({ utcTime: event.target.value })} /></label>
+                  </div>
+                })}
+                <button type="button" className="secondary-button" disabled={comparisonScenarios.length >= 6} onClick={() => { comparisonValidationVersion.current += 1; setComparisonScenarios((items) => [...items, newComparisonDraft(items.length, draft.utcTime)]) }}>Add scenario</button>
+              </fieldset>}
               <fieldset>
                 <legend>Time & model</legend>
-                <label className="field">
+                {workflow !== 'comparison' && <label className="field">
                   {workflow === 'timeline' ? 'Period start (UTC)' : 'Observation date and time (UTC)'}
                   <input
                     type="datetime-local"
@@ -444,11 +531,11 @@ export function ObservationWorkspace() {
                       change({ utcTime: event.target.value })
                     }
                   />
-                </label>
+                </label>}
                 <p className="field-help">
                   Enter UTC explicitly, regardless of your device time zone. Supported years: 2000–2049; whole seconds.
                 </p>
-                {workflow === 'timeline' && (
+                {workflow !== 'now' && (
                   <div className="field-pair">
                     <label className="field">
                       Duration (days)
@@ -527,7 +614,7 @@ export function ObservationWorkspace() {
               <button className="primary-button" type="submit">
                 {busy
                   ? workflow === 'timeline' ? 'Replace with new timeline' : 'Replace with new observation'
-                  : workflow === 'timeline' ? 'Request timeline' : 'Request observation'}
+                  : workflow === 'timeline' ? 'Request timeline' : workflow === 'comparison' ? 'Compare scenarios' : 'Request observation'}
               </button>
             </form>
             <div className="job-progress" role="status" aria-live="polite">
@@ -536,7 +623,9 @@ export function ObservationWorkspace() {
                   busy ? 'progress-dot active' : 'progress-dot'
                 }
               />
-              {workflow === 'timeline'
+              {workflow === 'comparison'
+                ? { idle: 'No comparison requested', submitting: 'Submitting comparison…', queued: 'Queued — waiting for the worker', running: 'Ranking scenarios…', 'loading-result': 'Loading comparison result…', succeeded: 'Comparison ready', failed: 'Comparison failed', error: 'Comparison request could not be completed' }[comparison.phase]
+                : workflow === 'timeline'
                 ? {
                     idle: 'No timeline requested',
                     submitting: 'Submitting timeline…',
@@ -580,9 +669,9 @@ export function ObservationWorkspace() {
               className="workspace-card visual-card"
               aria-labelledby="map-heading"
             >
-              <h2 id="map-heading">Lunar location</h2>
+              <h2 id="map-heading">Global Moon view</h2>
               <p className="muted">
-                Lunar imagery; click inside the map to select coordinates.
+                Global lunar projection; click to select a location.
               </p>
               <div className="map-viewport">
                 {!mapLayers && !mapError && (
@@ -607,13 +696,9 @@ export function ObservationWorkspace() {
                 {!!mapLayers?.items.length && (
                   <LunarMap
                     layers={mapLayers.items}
-                    quickmapUrl={
-                      draft.mode === 'catalog' ? draft.site?.quickmap_url : null
-                    }
+                    quickmapUrl={activeCatalogSite?.quickmap_url ?? null}
                     selectedCoordinate={coordinate || null}
-                    selectedSiteId={
-                      draft.mode === 'catalog' ? draft.site?.id : null
-                    }
+                    selectedSiteId={displayedSite?.site_id ?? (draft.mode === 'catalog' ? draft.site?.id : null)}
                     onSelectCoordinate={(value) =>
                       change({
                         mode: 'custom',
@@ -633,7 +718,7 @@ export function ObservationWorkspace() {
               className="workspace-card visual-card"
               aria-labelledby="scene-heading"
             >
-              <h2 id="scene-heading">Local sky directions</h2>
+              <h2 id="scene-heading">Local terrain inspector</h2>
               <p className="muted">
                 Schematic local ENU scene · directions from the observation API.
               </p>
@@ -644,13 +729,10 @@ export function ObservationWorkspace() {
                   dataStatus={(workflow === 'timeline' ? timelineResult?.meta.data_status : result?.meta.data_status) ?? null}
                   sunDirectionEnu={selectedPoint?.sun.direction_enu ?? null}
                   earthDirectionEnu={selectedPoint?.earth.direction_enu ?? null}
-                  observerHeightM={
-                    (workflow === 'timeline' ? timelineResult?.site.observer_height_m : result?.site.observer_height_m) ??
-                    (Number(draft.height) || undefined)
-                  }
-                  horizonMode={(workflow === 'timeline' ? timelineResult?.meta.horizon_mode : result?.meta.horizon_mode) ?? draft.horizonMode}
-                  terrainDatasetId={(workflow === 'timeline' ? timelineResult?.meta.terrain_dataset_id : result?.meta.terrain_dataset_id) ?? null}
-                  visibilityMarginDeg={workflow === 'now' && result ? observation.resultRequest?.visibility_margin_deg : Number(draft.margin)}
+                  observerHeightM={workflow === 'comparison' ? comparison.resultRequest?.observer_height_m : workflow === 'timeline' ? timelineResult?.site.observer_height_m : result?.site.observer_height_m ?? Number(draft.height)}
+                  horizonMode={(workflow === 'comparison' ? comparisonResult?.meta.horizon_mode : workflow === 'timeline' ? timelineResult?.meta.horizon_mode : result?.meta.horizon_mode) ?? draft.horizonMode}
+                  terrainDatasetId={(workflow === 'comparison' ? comparisonResult?.meta.terrain_dataset_id : workflow === 'timeline' ? timelineResult?.meta.terrain_dataset_id : result?.meta.terrain_dataset_id) ?? null}
+                  visibilityMarginDeg={workflow === 'comparison' ? comparison.resultRequest?.visibility_margin_deg : workflow === 'now' && result ? observation.resultRequest?.visibility_margin_deg : Number(draft.margin)}
                   isLoading={busy}
                   heightmap={heightmap}
                   isTerrainLoading={isTerrainLoading}
@@ -662,9 +744,13 @@ export function ObservationWorkspace() {
               </p>
             </section>
           </div>
+          <div className="workstation-bottom">
           {workflow === 'timeline' ? (
             timelineResult ? (
-              <TimelineAnalytics result={timelineResult} playback={playback} />
+              <>
+                {inspectedComparison && <p className="field-help">Detailed timeline for {inspectedComparison.label}: model {timelineResult.meta.model_version}, terrain dataset {timelineResult.meta.terrain_dataset_id ?? 'none'}. Comparison used model {inspectedComparison.model}, terrain dataset {inspectedComparison.dataset ?? 'none'}{timelineResult.meta.model_version !== inspectedComparison.model || timelineResult.meta.terrain_dataset_id !== inspectedComparison.dataset ? ' — versions differ; this detail result is not an exact model/dataset match.' : ' — model and dataset match the comparison metadata.'}</p>}
+                <TimelineAnalytics result={timelineResult} playback={playback} />
+              </>
             ) : (
               <section className="workspace-card" aria-label="Timeline result">
                 <h2>Timeline analysis</h2>
@@ -677,7 +763,16 @@ export function ObservationWorkspace() {
               <ObservationResult result={result} request={observation.resultRequest} coverage={observation.resultCoverage} />
             </>
           )}
+          {comparisonResult && <section className="workspace-card comparison-results" aria-label="Comparison results">
+            <div className="card-heading"><h2>Scenario ranking</h2><span className={`data-badge ${comparisonResult.meta.data_status}`}>{comparisonResult.meta.data_status}</span></div>
+            {(comparison.busy || comparison.phase === 'error' || comparison.phase === 'failed') && <p className="muted">Showing the last completed comparison while the newer request is {comparison.busy ? 'running' : 'unavailable'}.</p>}
+            <p><strong>Recommendation:</strong> {comparisonResult.recommended_label}. {comparisonResult.recommendation_reason}</p>
+            <p className="field-help">v1 product score = 40% sunlight + 30% Earth visibility + 30% golden-window time. It is not an official NASA safety certification. Equal displayed scores may retain different backend ranks because ranking uses unrounded values and tie-breaks.</p>
+            <div className="table-scroll"><table className="observation-table"><caption>Backend rank and returned metrics, in backend order</caption><thead><tr><th>Rank</th><th>Scenario / site</th><th>Start (UTC)</th><th>Sunlit</th><th>Earth visible</th><th>Golden</th><th>Longest golden</th><th>Score</th><th>Detail</th></tr></thead><tbody>{comparisonResult.ranked_scenarios.map((item) => <tr key={item.rank}><td>{item.rank}</td><th scope="row">{item.label}<br /><span className="muted">{item.site.name}</span></th><td>{item.start_time}</td><td>{item.summary.sunlit_pct}%</td><td>{item.summary.earth_visible_pct}%</td><td>{item.summary.golden_pct}%</td><td>{item.summary.longest_golden_window_hours} h</td><td>{item.score.toFixed(1)}</td><td><button type="button" className="secondary-button" onClick={() => inspectComparedScenario(item.label)}>Open timeline</button></td></tr>)}</tbody></table></div>
+            <details><summary>Comparison provenance</summary><p>Model {comparisonResult.meta.model_version} · {comparisonResult.meta.horizon_mode} · {comparisonResult.meta.time_resolution_minutes} minute samples · terrain dataset {comparisonResult.meta.terrain_dataset_id ?? 'none'}</p><ul className="source-list">{comparisonResult.meta.sources.map((source, index) => <li key={`${source.name}-${index}`}><SourceLink url={source.url}>{source.name}</SourceLink><p className="muted">Version {source.version ?? 'not reported'} · Retrieved {source.fetched_at}</p></li>)}</ul></details>
+          </section>}
           <CSAResources />
+          </div>
         </div>
       </div>
     </main>
