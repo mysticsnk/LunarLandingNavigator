@@ -123,3 +123,60 @@ class GeoTiffTerrainSource:
         if any(not math.isfinite(value) for value in samples):
             raise TerrainDataError("no_data", "Terrain interpolation returned a non-finite value")
         return sum(value * weight for value, weight in zip(samples, weights, strict=True))
+
+    def sample_many(self, latitudes: list[float], longitudes: list[float]) -> list[float]:
+        if len(latitudes) != len(longitudes):
+            raise ValueError("latitude and longitude arrays must have the same length")
+        if not latitudes:
+            return []
+
+        projected = [
+            south_polar_stereographic(latitude, normalize_longitude_exact(longitude))
+            for latitude, longitude in zip(latitudes, longitudes, strict=True)
+        ]
+        x_m, y_m = np.asarray(projected, dtype=np.float64).T
+        col = (x_m - self.x_min_m) / self.resolution_m - 0.5
+        row = (self.y_max_m - y_m) / self.resolution_m - 0.5
+        outside = (col < -0.5) | (col > self.width - 0.5) | (row < -0.5) | (row > self.height - 0.5)
+        if np.any(outside):
+            raise TerrainDataError(
+                "outside_coverage", "Coordinate is outside the terrain footprint"
+            )
+
+        col = np.clip(col, 0.0, self.width - 1.0)
+        row = np.clip(row, 0.0, self.height - 1.0)
+        col0 = np.minimum(np.floor(col).astype(np.int64), self.width - 2)
+        row0 = np.minimum(np.floor(row).astype(np.int64), self.height - 2)
+        col_fraction, row_fraction = col - col0, row - row0
+        left, top = int(col0.min()), int(row0.min())
+        right, bottom = int(col0.max()) + 2, int(row0.max()) + 2
+        values = self._dataset.read(
+            1,
+            window=Window(left, top, right - left, bottom - top),
+            masked=True,
+        )
+        local_col, local_row = col0 - left, row0 - top
+        samples = np.ma.asarray(
+            [
+                values[local_row, local_col],
+                values[local_row, local_col + 1],
+                values[local_row + 1, local_col],
+                values[local_row + 1, local_col + 1],
+            ]
+        ).T
+        weights = np.column_stack(
+            (
+                (1.0 - col_fraction) * (1.0 - row_fraction),
+                col_fraction * (1.0 - row_fraction),
+                (1.0 - col_fraction) * row_fraction,
+                col_fraction * row_fraction,
+            )
+        )
+        masked = np.ma.getmaskarray(samples)
+        if np.any(masked & (weights > 1e-12)):
+            raise TerrainDataError("no_data", "Terrain interpolation touches a no-data cell")
+
+        data = np.asarray(samples.filled(np.nan), dtype=np.float64)
+        if not np.isfinite(data).all():
+            raise TerrainDataError("no_data", "Terrain interpolation returned a non-finite value")
+        return np.sum(data * weights, axis=1).tolist()

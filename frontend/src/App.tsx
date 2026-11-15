@@ -22,7 +22,6 @@ export function App() {
             LUNAR NAVIGATOR <span>/ WORKSTATION</span>
           </h1>
         </div>
-        <button className="header-compare" type="button" onClick={openComparison}>Compare sites</button>
         {isDemoModeEnabled() && (
           <span className="demo-badge" data-testid="header-demo-badge">
             DEMO HEALTH FIXTURE · Observations use the API

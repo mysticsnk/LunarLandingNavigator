@@ -15,6 +15,17 @@ class NorthRisingTerrain:
         return (latitude + 90.0) * 1000.0
 
 
+class BatchedNorthRisingTerrain(NorthRisingTerrain):
+    batch_calls = 0
+
+    def sample_many(self, latitudes, longitudes):
+        self.batch_calls += 1
+        return [
+            self.sample(latitude, longitude)
+            for latitude, longitude in zip(latitudes, longitudes, strict=True)
+        ]
+
+
 def test_heightmap_uses_local_enu_origin_and_north_increasing_rows():
     terrain = NorthRisingTerrain()
     result = build_heightmap(
@@ -38,6 +49,27 @@ def test_heightmap_uses_local_enu_origin_and_north_increasing_rows():
     assert len(result["elevation_m"]) == result["width"] * result["height"]
     assert result["elevation_m"][3] < result["elevation_m"][6]
     assert result["elevation_m"][4] == pytest.approx(0.0, abs=1e-8)
+
+
+def test_heightmap_uses_one_batch_for_available_terrain_sources():
+    terrain = BatchedNorthRisingTerrain()
+    result = build_heightmap(
+        {
+            "id": terrain.dataset_id,
+            "region_id": "controlled-region",
+            "processing_version": "controlled-model-v1",
+            "origin_latitude": -89.9,
+            "origin_longitude": 20.0,
+            "spacing_m": 20.0,
+            "grid_half_extent_m": 20.0,
+            "source_url": terrain.source_url,
+            "attribution": "Controlled test data",
+        },
+        terrain,
+    )
+
+    assert terrain.batch_calls == 1
+    assert len(result["elevation_m"]) == result["width"] * result["height"]
 
 
 def test_heightmap_rejects_an_unbounded_grid():

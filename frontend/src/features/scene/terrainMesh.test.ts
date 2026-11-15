@@ -3,6 +3,7 @@ import { heightmapFixture } from '../../test/fixtures'
 import {
   buildTerrainGeometry,
   getLocalSurfaceElevationAtOrigin,
+  getTerrainCameraFrame,
   validateHeightmap,
 } from './terrainMesh'
 
@@ -135,6 +136,7 @@ describe('terrainMesh geometry & validation', () => {
       const index = geo.getIndex()
       expect(index).not.toBeNull()
       expect(index!.count).toBe(6)
+      expect(geo.getAttribute('normal').getY(0)).toBeGreaterThan(0)
     })
 
     it('preserves horizontal and vertical scale consistency with uniform scaling', () => {
@@ -158,6 +160,17 @@ describe('terrainMesh geometry & validation', () => {
       expect(positions.getX(12)).toBe(0)
       expect(positions.getY(12)).toBe(12 * exaggeration) // 24
       expect(positions.getZ(12)).toBe(-0)
+    })
+
+    it('centers and frames the full terrain bounds for the viewport aspect ratio', () => {
+      const geometry = buildTerrainGeometry(heightmapFixture, { scale: 0.05, exaggeration: 5 })
+      const frame = getTerrainCameraFrame(geometry, 45, 16 / 9)
+
+      expect(frame.center.x).toBeCloseTo(0)
+      expect(frame.center.y).toBeCloseTo(1.5)
+      expect(frame.center.z).toBeCloseTo(0)
+      expect(frame.distance).toBeGreaterThan(frame.center.length())
+      expect(Number.isFinite(frame.distance)).toBe(true)
     })
   })
 
