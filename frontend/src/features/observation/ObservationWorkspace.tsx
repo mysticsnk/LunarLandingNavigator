@@ -317,12 +317,12 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
         </p>
       </div>
       <div className={`main-grid${workflow === 'comparison' ? ' comparison-active' : ''}${layoutMode === 'split' ? '' : ` expanded-${layoutMode.slice('enlarge-'.length)}`}`}>
-        {workflow === 'comparison' && <button type="button" className="comparison-backdrop" aria-label="Close comparison builder" onClick={onCloseComparison} />}
+        {workflow === 'comparison' && <div className="comparison-backdrop" aria-hidden="true" />}
         <nav className="activity-rail" aria-label="Workstation sections">
           <button type="button" aria-label="Landing sites" title="Landing sites" onClick={() => document.getElementById('landing-sites')?.scrollIntoView({ block: 'start' })}>⌖</button>
           <button type="button" aria-label="Timeline analysis" title="Timeline analysis" onClick={() => selectWorkflow('timeline')}>∿</button>
-          <button type="button" aria-label="Global Moon layers" title="Global Moon layers" onClick={() => { setLayoutMode('split'); if (mapLayersDisclosureRef.current) mapLayersDisclosureRef.current.open = true }}>▱</button>
-          <button type="button" aria-label="Comparison builder" title="Comparison builder" onClick={onOpenComparison}>⚖</button>
+          <button type="button" aria-label="Global Moon layers" title="Global Moon layers" onClick={() => { setLayoutMode('split'); if (mapLayersDisclosureRef.current) mapLayersDisclosureRef.current.open = !mapLayersDisclosureRef.current.open }}>▱</button>
+          <button type="button" aria-label="Compare sites" title="Compare sites" onClick={onOpenComparison}>⚖</button>
         </nav>
         <aside className="grid-sidebar">
           <section
@@ -626,11 +626,43 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
               </>
             )}
             {activeJob.error && <RequestError error={activeJob.error} />}
+            {workflow === 'comparison' && comparisonResult && (
+              <div className="drawer-comparison-summary" style={{ marginTop: '0.85rem', paddingTop: '0.75rem', borderTop: '1px solid var(--color-border)' }}>
+                <p><strong>Recommendation:</strong> {comparisonResult.recommended_label}</p>
+                <p className="muted" style={{ fontSize: '0.72rem' }}>{comparisonResult.recommendation_reason}</p>
+                <div className="table-scroll">
+                  <table className="observation-table" style={{ fontSize: '0.72rem' }}>
+                    <thead>
+                      <tr><th>Rank</th><th>Scenario</th><th>Score</th><th>Action</th></tr>
+                    </thead>
+                    <tbody>
+                      {comparisonResult.ranked_scenarios.map((item) => (
+                        <tr key={item.rank}>
+                          <td>{item.rank}</td>
+                          <td><strong>{item.label}</strong><br /><span className="muted">{item.site.name}</span></td>
+                          <td>{item.score.toFixed(1)}</td>
+                          <td>
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              style={{ padding: '2px 6px', fontSize: '0.68rem' }}
+                              onClick={() => inspectComparedScenario(item.label)}
+                            >
+                              Timeline
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            <details className="health-details-panel">
+              <summary>Backend connection</summary>
+              <HealthCard />
+            </details>
           </section>
-          <details className="health-details-panel">
-            <summary>Backend connection</summary>
-            <HealthCard />
-          </details>
         </aside>
         <div className="grid-content">
           <div className="visual-grid">

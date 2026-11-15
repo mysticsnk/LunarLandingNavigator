@@ -235,7 +235,7 @@ export class ApiClient {
 
   constructor(config?: ApiClientConfig) {
     this.baseUrl = resolveApiBaseUrl(config?.baseUrl)
-    this.defaultTimeoutMs = config?.defaultTimeoutMs ?? 5000
+    this.defaultTimeoutMs = config?.defaultTimeoutMs ?? 20000
   }
 
   private async request<T>(

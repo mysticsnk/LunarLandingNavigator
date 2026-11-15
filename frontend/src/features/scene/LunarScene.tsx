@@ -65,48 +65,36 @@ const LocalAxes: React.FC<{ length?: number }> = ({ length = 5 }) => {
     }
   }, [length])
 
-  const eastGeo = useMemo(
-    () => new THREE.BufferGeometry().setFromPoints(eastPoints),
-    [eastPoints],
-  )
-  const upGeo = useMemo(
-    () => new THREE.BufferGeometry().setFromPoints(upPoints),
-    [upPoints],
-  )
-  const northGeo = useMemo(
-    () => new THREE.BufferGeometry().setFromPoints(northPoints),
-    [northPoints],
-  )
+  const { eastLine, upLine, northLine } = useMemo(() => {
+    const eG = new THREE.BufferGeometry().setFromPoints(eastPoints)
+    const uG = new THREE.BufferGeometry().setFromPoints(upPoints)
+    const nG = new THREE.BufferGeometry().setFromPoints(northPoints)
+    return {
+      eastLine: new THREE.Line(eG, new THREE.LineBasicMaterial({ color: '#ff4d4f', linewidth: 2 })),
+      upLine: new THREE.Line(uG, new THREE.LineBasicMaterial({ color: '#52c41a', linewidth: 2 })),
+      northLine: new THREE.Line(nG, new THREE.LineBasicMaterial({ color: '#1890ff', linewidth: 2 })),
+    }
+  }, [eastPoints, northPoints, upPoints])
+
+  useEffect(() => {
+    return () => {
+      eastLine.geometry.dispose()
+      if (eastLine.material instanceof THREE.Material) eastLine.material.dispose()
+      upLine.geometry.dispose()
+      if (upLine.material instanceof THREE.Material) upLine.material.dispose()
+      northLine.geometry.dispose()
+      if (northLine.material instanceof THREE.Material) northLine.material.dispose()
+    }
+  }, [eastLine, northLine, upLine])
 
   return (
     <group data-testid="local-axes">
       {/* East: +X */}
-      <primitive
-        object={
-          new THREE.Line(
-            eastGeo,
-            new THREE.LineBasicMaterial({ color: '#ff4d4f', linewidth: 2 }),
-          )
-        }
-      />
+      <primitive object={eastLine} dispose={null} />
       {/* Up: +Y */}
-      <primitive
-        object={
-          new THREE.Line(
-            upGeo,
-            new THREE.LineBasicMaterial({ color: '#52c41a', linewidth: 2 }),
-          )
-        }
-      />
+      <primitive object={upLine} dispose={null} />
       {/* North: -Z */}
-      <primitive
-        object={
-          new THREE.Line(
-            northGeo,
-            new THREE.LineBasicMaterial({ color: '#1890ff', linewidth: 2 }),
-          )
-        }
-      />
+      <primitive object={northLine} dispose={null} />
     </group>
   )
 }
@@ -184,28 +172,30 @@ const DirectionMarker: React.FC<{
     )
   }, [sceneDirection, distance])
 
-  const lineGeo = useMemo(() => {
-    return new THREE.BufferGeometry().setFromPoints([
+  const lineObj = useMemo(() => {
+    const geo = new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(0, 0, 0),
       targetPos,
     ])
-  }, [targetPos])
+    const mat = new THREE.LineBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.65,
+    })
+    return new THREE.Line(geo, mat)
+  }, [color, targetPos])
+
+  useEffect(() => {
+    return () => {
+      lineObj.geometry.dispose()
+      if (lineObj.material instanceof THREE.Material) lineObj.material.dispose()
+    }
+  }, [lineObj])
 
   return (
     <group data-testid={`direction-marker-${label.toLowerCase()}`}>
       {/* Direction ray */}
-      <primitive
-        object={
-          new THREE.Line(
-            lineGeo,
-            new THREE.LineDashedMaterial({
-              color,
-              dashSize: 0.3,
-              gapSize: 0.15,
-            }),
-          )
-        }
-      />
+      <primitive object={lineObj} dispose={null} />
       {/* Target body sphere */}
       <mesh position={targetPos}>
         <sphereGeometry args={[size, 24, 24]} />

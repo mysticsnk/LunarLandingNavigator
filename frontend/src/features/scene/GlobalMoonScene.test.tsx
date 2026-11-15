@@ -261,5 +261,54 @@ describe('Stage 5 GlobalMoonScene Component', () => {
         /Link: Awaiting ephemeris…/i,
       )
     })
+
+    it('transitions into and out of golden window without throwing an error', () => {
+      const onError = vi.fn()
+      const blockedPoint: ObservationPoint = {
+        timestamp: '2026-11-15T12:00:00Z',
+        sun: { azimuth_deg: 180, elevation_deg: 2, horizon_elevation_deg: 0, visible: true, direction_enu: azimuthElevationToEnu(180, 2) },
+        earth: { azimuth_deg: 10, elevation_deg: -1.5, horizon_elevation_deg: 0, visible: false, direction_enu: azimuthElevationToEnu(10, -1.5) },
+        is_golden_window: false,
+      }
+      const goldenPoint: ObservationPoint = {
+        timestamp: '2026-11-15T13:00:00Z',
+        sun: { azimuth_deg: 180, elevation_deg: 2.2, horizon_elevation_deg: 0, visible: true, direction_enu: azimuthElevationToEnu(180, 2.2) },
+        earth: { azimuth_deg: 10, elevation_deg: 2.5, horizon_elevation_deg: 0, visible: true, direction_enu: azimuthElevationToEnu(10, 2.5) },
+        is_golden_window: true,
+      }
+
+      const { rerender } = render(
+        <GlobalMoonScene
+          observationPoint={blockedPoint}
+          selectedSite={mockSites[0]}
+          onError={onError}
+        />,
+      )
+      expect(screen.getByTestId('comm-link-blocked')).toBeInTheDocument()
+
+      // Enter golden window
+      rerender(
+        <GlobalMoonScene
+          observationPoint={goldenPoint}
+          selectedSite={mockSites[0]}
+          onError={onError}
+        />,
+      )
+      expect(screen.getByTestId('comm-link-active')).toBeInTheDocument()
+      expect(screen.queryByTestId('scene-error-fallback')).not.toBeInTheDocument()
+      expect(onError).not.toHaveBeenCalled()
+
+      // Exit golden window
+      rerender(
+        <GlobalMoonScene
+          observationPoint={blockedPoint}
+          selectedSite={mockSites[0]}
+          onError={onError}
+        />,
+      )
+      expect(screen.getByTestId('comm-link-blocked')).toBeInTheDocument()
+      expect(screen.queryByTestId('scene-error-fallback')).not.toBeInTheDocument()
+      expect(onError).not.toHaveBeenCalled()
+    })
   })
 })
