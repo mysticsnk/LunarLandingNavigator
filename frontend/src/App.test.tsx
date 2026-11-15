@@ -45,6 +45,12 @@ vi.mock('./features/scene', () => ({
     visual.scene(props)
     return <div data-testid="scene-integration" />
   },
+  useHeightmap: vi.fn(() => ({
+    heightmap: null,
+    loading: false,
+    error: null,
+    reload: vi.fn(),
+  })),
 }))
 
 beforeEach(() => {

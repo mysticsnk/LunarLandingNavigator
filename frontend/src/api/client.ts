@@ -14,6 +14,7 @@ import type {
   TimelineResult,
   CSAResources,
   LayerList,
+  Heightmap,
 } from './types'
 
 export interface ApiClientConfig {
@@ -558,6 +559,53 @@ export class ApiClient {
       )
     )
       invalidResponse()
+    return value
+  }
+
+  async getHeightmap(
+    regionId: string,
+    options?: RequestOptions,
+  ): Promise<Heightmap> {
+    const value = await this.request<Heightmap>(
+      `/api/v1/terrain/regions/${encodeURIComponent(regionId)}/heightmap`,
+      options,
+    )
+    if (
+      !record(value) ||
+      value.region_id !== regionId ||
+      typeof value.dataset_id !== 'string' ||
+      typeof value.model_version !== 'string' ||
+      value.frame !== 'local_enu' ||
+      !record(value.origin) ||
+      typeof value.origin.latitude !== 'number' ||
+      !Number.isFinite(value.origin.latitude) ||
+      typeof value.origin.longitude !== 'number' ||
+      !Number.isFinite(value.origin.longitude) ||
+      typeof value.origin.elevation_m !== 'number' ||
+      !Number.isFinite(value.origin.elevation_m) ||
+      typeof value.east_min_m !== 'number' ||
+      !Number.isFinite(value.east_min_m) ||
+      typeof value.north_min_m !== 'number' ||
+      !Number.isFinite(value.north_min_m) ||
+      typeof value.spacing_m !== 'number' ||
+      !Number.isFinite(value.spacing_m) ||
+      value.spacing_m <= 0 ||
+      typeof value.width !== 'number' ||
+      !Number.isInteger(value.width) ||
+      value.width <= 0 ||
+      typeof value.height !== 'number' ||
+      !Number.isInteger(value.height) ||
+      value.height <= 0 ||
+      !Array.isArray(value.elevation_m) ||
+      value.elevation_m.length !== value.width * value.height ||
+      !value.elevation_m.every(
+        (v) => typeof v === 'number' && Number.isFinite(v),
+      ) ||
+      typeof value.source_url !== 'string' ||
+      typeof value.attribution !== 'string'
+    ) {
+      invalidResponse('Unsupported or invalid terrain heightmap metadata')
+    }
     return value
   }
 }

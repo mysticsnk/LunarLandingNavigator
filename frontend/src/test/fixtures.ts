@@ -10,6 +10,7 @@ import type {
   NowResult,
   SiteList,
   TimelineResult,
+  Heightmap,
 } from '../api/types'
 
 // Test-only synthetic examples; these are not measured scientific results.
@@ -74,6 +75,32 @@ export const resourceItem = {
   url: 'https://example.org/news-fixture',
   published_at: '2027-07-14T12:00:00Z',
   topics: ['Moon'],
+}
+
+export const heightmapFixture: Heightmap = {
+  region_id: 'shackleton_connecting_ridge',
+  dataset_id: 'LDEM_80S_20MPP_ADJ',
+  model_version: 'stage4-dem-v1',
+  frame: 'local_enu',
+  origin: {
+    latitude: -89.44,
+    longitude: -137.9,
+    elevation_m: 1250.0,
+  },
+  east_min_m: -100,
+  north_min_m: -100,
+  spacing_m: 50,
+  width: 5,
+  height: 5,
+  elevation_m: [
+    0, 2, 5, 2, 0,
+    1, 4, 8, 4, 1,
+    3, 6, 12, 6, 3,
+    1, 4, 8, 4, 1,
+    0, 2, 5, 2, 0,
+  ],
+  source_url: 'https://pgda.gsfc.nasa.gov/products/90',
+  attribution: 'NASA/GSFC/LOLA Team; LDEM 80S 20m/px.',
 }
 
 export function deferred<T>() {

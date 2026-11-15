@@ -5,7 +5,7 @@ import type { Site, SiteList, LayerList } from '../../api/types'
 import { SourceLink } from '../../components/SourceLink'
 import { RequestError } from '../../components/RequestError'
 import { LunarMap } from '../map'
-import { LunarScene } from '../scene'
+import { LunarScene, useHeightmap } from '../scene'
 import {
   buildRequest,
   buildTimelineRequest,
@@ -136,6 +136,20 @@ export function ObservationWorkspace() {
   const longitude = Number(draft.longitude)
   // The map owns coordinate transformations; wait for server normalization outside its accepted longitude range.
   const displayedSite = workflow === 'timeline' ? timelineResult?.site : result?.site
+  const effectiveSite =
+    displayedSite ?? (draft.mode === 'catalog' ? draft.site : null)
+  const activeCatalogSite =
+    draft.mode === 'catalog' && draft.site
+      ? draft.site
+      : displayedSite?.site_id
+        ? catalog?.items.find((item) => item.id === displayedSite.site_id) ?? null
+        : null
+  const terrainRegionId = activeCatalogSite?.terrain_region_id ?? null
+  const {
+    heightmap,
+    loading: isTerrainLoading,
+    error: terrainError,
+  } = useHeightmap(terrainRegionId)
   const coordinate = displayedSite
     ? { latitude: displayedSite.latitude, longitude: displayedSite.longitude }
     : draft.mode === 'catalog'
@@ -571,19 +585,22 @@ export function ObservationWorkspace() {
               <div className="scene-viewport">
                 <LunarScene
                   observationPoint={selectedPoint}
-                  site={
-                    (workflow === 'timeline' ? timelineResult?.site : result?.site) ??
-                    (draft.mode === 'catalog' ? draft.site : null)
-                  }
+                  site={effectiveSite}
                   dataStatus={(workflow === 'timeline' ? timelineResult?.meta.data_status : result?.meta.data_status) ?? null}
                   sunDirectionEnu={selectedPoint?.sun.direction_enu ?? null}
                   earthDirectionEnu={selectedPoint?.earth.direction_enu ?? null}
-                  observerHeightM={(workflow === 'timeline' ? timelineResult?.site.observer_height_m : result?.site.observer_height_m) ?? undefined}
+                  observerHeightM={
+                    (workflow === 'timeline' ? timelineResult?.site.observer_height_m : result?.site.observer_height_m) ??
+                    (Number(draft.height) || undefined)
+                  }
                   isLoading={busy}
+                  heightmap={heightmap}
+                  isTerrainLoading={isTerrainLoading}
+                  terrainError={terrainError}
                 />
               </div>
               <p className="field-help">
-                Marker distances are for display; terrain is not modeled.
+                Marker distances are for display; terrain mesh shows local numerical geometry when available.
               </p>
             </section>
           </div>
