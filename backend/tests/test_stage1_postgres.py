@@ -511,6 +511,13 @@ def test_comparison_job_lifecycle_and_cache_with_postgresql(pg_client, pg_repo, 
     assert accepted.status_code == 202
     check_schema("JobAccepted", accepted.json())
     assert accepted.json()["kind"] == "comparison"
+    normalized = pg_repo.job(accepted.json()["job_id"])["normalized"]
+    for scenario in result["ranked_scenarios"]:
+        scenario["provenance"]["model_version"] = next(
+            item["model_version"]
+            for item in normalized["scenarios"]
+            if item["label"] == scenario["label"]
+        )
     assert run_once(pg_repo, executor=lambda _: result)
 
     status = pg_client.get(accepted.json()["status_url"]).json()
