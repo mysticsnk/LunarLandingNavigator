@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "global_texture": {
+    "id": "nasa-svs-lroc-color-2k-2025",
+    "file": "lroc_color_2k.jpg",
+    "public_url": "/assets/lroc_color_2k.jpg",
+    "source_page_url": "https://svs.gsfc.nasa.gov/4720/",
+    "source_asset_url": "https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/lroc_color_2k.jpg",
+    "attribution": "NASA's Scientific Visualization Studio; visualizer Ernie Wright; scientist Noah Petro (NASA/GSFC). Color adapted from the LROC WAC Hapke Normalized Mosaic, with polar fill from LRO's Laser Altimeter Data Set (LDAM).",
+    "coverage": {
+      "display_texture": "Global rectangular longitude/latitude map, including both poles.",
+      "lroc_wac_source_latitude_degrees": [-70, 70],
+      "polar_fill": "Latitudes outside the LROC WAC source range are filled with lower-resolution monochrome LDAM albedo; polar detail is not equivalent to WAC detail."
+    },
+    "projection": "Equirectangular longitude/latitude (inferred from the 2:1 image and NASA's pixel-to-longitude/latitude description; the NASA page does not name a projection).",
+    "longitude_origin_degrees": 0,
+    "longitude_coverage_degrees": [-180, 180],
+    "longitude_wrap_degrees": 360,
+    "orientation": "Image top is north and bottom is south; image x increases from west to east. Verify the final rendered marker alignment against known features before release.",
+    "dimensions_pixels": [2048, 1024],
+    "file_size_bytes": 457942,
+    "sha256": "f7130a1822681fa7512d7dcfd40db8c10b9ba4f06777910348698260ed7a2170",
+    "sphere_mapping": {
+      "source_pixel_x": "((normalized_longitude_degrees + 180) / 360) * (width - 1)",
+      "source_pixel_y": "((90 - latitude_degrees) / 180) * (height - 1)",
+      "threejs_uv": "u = (normalized_longitude_degrees + 180) / 360; v = (90 + latitude_degrees) / 180",
+      "texture_loader_flip_y": true,
+      "coordinate_basis": "Prime meridian at +X; positive-east 90 degrees at -Z; lunar north at +Y."
+    },
+    "use": "Display color only; this is not numerical elevation data and must not be used for terrain or physical calculations."
+  },
+  "local_terrain": {
+    "delivery": "Runtime API heightmap; no source DEM or generated terrain grid is vendored in this repository.",
+    "source_product": "NASA/GSFC LOLA PGDA Product 90, LDEM_80S_20MPP_ADJ.TIF",
+    "source_metadata_url": "https://pgda.gsfc.nasa.gov/products/90",
+    "source_download_url": "https://pgda.gsfc.nasa.gov/data/LOLA_20mpp/LDEM_80S_20MPP_ADJ.TIF",
+    "dataset_id": "lola-product-90-09b7ca80f9e6a146",
+    "model_version": "lunar-south-polar-v1",
+    "source_sha256": "09b7ca80f9e6a146f970225d18af72fc02787669b3ef51b888e347d2b6845649",
+    "source_file_size_bytes": 2696082051,
+    "source_footprint": "80 degrees south through the south pole",
+    "source_resolution_m": 20,
+    "source_format": "Float32 numerical GeoTIFF DEM; south-polar stereographic X/Y in metres; MOON_ME / JPL DE421; reference sphere radius 1737400 metres; NoData is NaN.",
+    "display_grid_contract": {
+      "endpoint_template": "/api/v1/terrain/regions/{region_id}/heightmap",
+      "frame": "local_enu",
+      "coordinate_mapping": "Rows increase north; columns increase east; row-major index is row * width + column; scene x=east, y=up, z=-north.",
+      "elevation_m": "Up displacement relative to the local scene origin; origin.elevation_m is the sampled source surface elevation.",
+      "previously_verified_shackleton_grid": {
+        "origin": { "latitude": -89.44, "longitude": -137.9 },
+        "east_min_m": -1280,
+        "north_min_m": -1280,
+        "width": 129,
+        "height": 129,
+        "spacing_m": 20,
+        "evidence_status": "Prior Stage 4 evidence only; not re-verified in this checkout."
+      }
+    },
+    "readiness_note": "A source footprint or product registration does not prove a particular site's current API coverage or a validated horizon model."
+  }
+}
