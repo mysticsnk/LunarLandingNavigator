@@ -121,7 +121,7 @@ def test_unexpected_failure_has_safe_complete_error_envelope():
     assert "sensitive internals" not in response.text
 
 
-def test_runtime_registers_stage3_timeline_route(client):
+def test_runtime_registers_current_routes(client):
     assert set(client.get("/openapi.json").json()["paths"]) == {
         "/api/v1/health",
         "/api/v1/sites",
@@ -135,6 +135,8 @@ def test_runtime_registers_stage3_timeline_route(client):
         "/api/v1/map/layers/{layer_id}",
         "/api/v1/map/layers/{layer_id}/image",
         "/api/v1/map/layers/{layer_id}/tiles/{matrix}/{row}/{col}",
+        "/api/v1/terrain/coverage",
+        "/api/v1/terrain/regions/{region_id}/heightmap",
     }
     for method, path in (("POST", "/api/v1/ephemeris/compare"),):
         response = client.request(method, path)

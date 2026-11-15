@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiClient } from '../../api/client'
 import { ApiClientError } from '../../api/errors'
-import type { NowRequest, NowResult } from '../../api/types'
+import type { NowRequest, NowResult, TerrainCoverage } from '../../api/types'
 
 type Phase =
   | 'idle'
@@ -17,6 +17,9 @@ interface ObservationState {
   result: NowResult | null
   error: ApiClientError | null
   jobId?: string
+  request?: NowRequest
+  resultRequest?: NowRequest
+  resultCoverage?: TerrainCoverage | null
 }
 const idle: ObservationState = { phase: 'idle', result: null, error: null }
 
@@ -34,18 +37,18 @@ export function useObservation() {
   }, [])
   const reset = useCallback(() => {
     stop()
-    setState(idle)
+    setState((previous) => ({ ...idle, result: previous.result, resultRequest: previous.resultRequest, resultCoverage: previous.resultCoverage }))
   }, [stop])
   useEffect(() => stop, [stop])
 
   const submit = useCallback(
-    async (request: NowRequest) => {
+    async (request: NowRequest, coverage?: TerrainCoverage | null) => {
       stop()
       const current = sequence.current
       const abort = new AbortController()
       controller.current = abort
       const active = () => current === sequence.current && !abort.signal.aborted
-      setState({ phase: 'submitting', result: null, error: null })
+      setState((previous) => ({ phase: 'submitting', result: previous.result, error: null, request }))
       const fail = (error: unknown) => {
         if (active())
           setState((previous) => ({
@@ -65,12 +68,15 @@ export function useObservation() {
           signal: abort.signal,
         })
         if (!active()) return
-        setState({
+        setState((previous) => ({
           phase: 'queued',
-          result: null,
+          result: previous.result,
           error: null,
           jobId: accepted.job_id,
-        })
+          request,
+          resultRequest: previous.resultRequest,
+          resultCoverage: previous.resultCoverage,
+        }))
         const poll = async () => {
           try {
             const job = await apiClient.getJob(accepted.status_url, {
@@ -80,8 +86,11 @@ export function useObservation() {
             if (job.status === 'failed') {
               setState({
                 phase: 'failed',
-                result: null,
+                result: state.result,
                 jobId: accepted.job_id,
+                request,
+                resultRequest: state.resultRequest,
+                resultCoverage: state.resultCoverage,
                 error: new ApiClientError({
                   ...job.error!,
                   requestId: job.error!.request_id,
@@ -98,6 +107,9 @@ export function useObservation() {
                   result,
                   error: null,
                   jobId: accepted.job_id,
+                  request,
+                  resultRequest: request,
+                  resultCoverage: coverage ?? null,
                 })
             } else {
               setState((previous) => ({
@@ -119,7 +131,7 @@ export function useObservation() {
         fail(error)
       }
     },
-    [stop],
+    [stop, state.result, state.resultRequest, state.resultCoverage],
   )
 
   return {

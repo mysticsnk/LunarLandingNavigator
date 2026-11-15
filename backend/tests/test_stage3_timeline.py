@@ -128,12 +128,13 @@ def test_worker_rejects_service_result_for_a_different_period(monkeypatch):
         "end_time": "2027-07-29T12:00:00Z",
         "duration_days": 14,
         "step_minutes": 120,
+        "horizon_mode": "geometric",
         "observer_height_m": 2.0,
         "visibility_margin_deg": 0.0,
         "model_version": "geometric-timeline-v1",
     }
     monkeypatch.setattr(
-        "app.worker.calculate_geometric_timeline",
+        "app.worker.calculate_timeline",
         lambda **_: SimpleNamespace(
             start_time="2027-07-16T12:00:00Z",
             end_time=normalized["end_time"],

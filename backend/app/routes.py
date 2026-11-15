@@ -9,7 +9,7 @@ from starlette.concurrency import run_in_threadpool
 from app.core.problems import ErrorEnvelope
 from app.requests import Category, NowRequest, TimelineRequest
 from app.resources import get_resources
-from app.results import NowResult, TimelineResult
+from app.results import Heightmap, NowResult, TerrainCoverage, TimelineResult
 from app.storage import Repository, get_repository
 
 
@@ -46,6 +46,8 @@ router = APIRouter(
     },
 )
 Repo = Annotated[Repository, Depends(get_repository)]
+TerrainLatitude = Annotated[float, Query(ge=-90, le=90, allow_inf_nan=False)]
+TerrainLongitude = Annotated[float, Query(ge=-180, lt=360, allow_inf_nan=False)]
 
 
 @router.get("/sites", dependencies=[Depends(query_fields("category", "limit", "offset"))])
@@ -61,6 +63,24 @@ def list_sites(
 @router.get("/sites/{site_id}", dependencies=[Depends(query_fields())])
 def get_site(site_id: str, repository: Repo):
     return repository.site(site_id)
+
+
+@router.get(
+    "/terrain/coverage",
+    response_model=TerrainCoverage,
+    dependencies=[Depends(query_fields("latitude", "longitude"))],
+)
+def terrain_coverage(latitude: TerrainLatitude, longitude: TerrainLongitude, repository: Repo):
+    return repository.terrain_coverage(latitude, longitude)
+
+
+@router.get(
+    "/terrain/regions/{region_id}/heightmap",
+    response_model=Heightmap,
+    dependencies=[Depends(query_fields())],
+)
+def terrain_heightmap(region_id: str, repository: Repo):
+    return repository.heightmap(region_id)
 
 
 def get_csa_fetcher():

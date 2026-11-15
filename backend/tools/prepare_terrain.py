@@ -5,9 +5,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
-import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -90,7 +90,7 @@ PRODUCTS = {
             20.0,
             b"II+\x00",
             "Product 90 coverage 80 degrees south through the south pole to 90 degrees south",
-            None,
+            1_737_400,
         ),
     )
 }
@@ -132,6 +132,63 @@ def verify_file(
     return product_manifest(product, path, digest, expected_sha256 is not None)
 
 
+def verify_raster(product: TerrainProduct, path: Path, expected_sha256: str | None = None):
+    manifest = verify_file(product, path, expected_sha256)
+    if product.source_reference_radius_m is None:
+        raise ValueError("product vertical reference radius is not verified")
+    if product.product_id != "LDEM_80S_20MPP_ADJ.TIF":
+        raise ValueError("only the verified Product 90 raster is ready for physical terrain use")
+
+    import rasterio
+
+    with rasterio.open(path) as dataset:
+        crs = dataset.crs.to_wkt() if dataset.crs else ""
+        transform = dataset.transform
+        nodata = dataset.nodata
+        valid = (
+            dataset.count == 1
+            and dataset.dtypes == ("float32",)
+            and dataset.width == product.width
+            and dataset.height == product.height
+            and math.isclose(transform.a, product.resolution_m, abs_tol=1e-9)
+            and math.isclose(transform.e, -product.resolution_m, abs_tol=1e-9)
+            and math.isclose(transform.b, 0.0, abs_tol=1e-12)
+            and math.isclose(transform.d, 0.0, abs_tol=1e-12)
+            and math.isclose(transform.c, -304_000.0, abs_tol=1e-6)
+            and math.isclose(transform.f, 304_000.0, abs_tol=1e-6)
+            and nodata is not None
+            and math.isnan(nodata)
+            and "Moon (2015)" in crs
+            and "1737400" in crs
+            and 'AUTHORITY["IAU","30135"]' in crs
+        )
+        if not valid:
+            raise ValueError("GeoTIFF metadata does not match the verified Product 90 model")
+
+    from app.terrain.raster import GeoTiffTerrainSource
+
+    with GeoTiffTerrainSource(
+        path,
+        dataset_id=f"lola-product-90-{manifest['sha256'][:16]}",
+        model_version="lunar-south-polar-v1",
+        source_url=product.source_url,
+        source_frame="MOON_ME / JPL DE421",
+        reference_radius_m=product.source_reference_radius_m,
+    ) as source:
+        for latitude, longitude in ((-89.44, -137.9), (-87.45, 77.0)):
+            source.sample(latitude, longitude)
+
+    manifest["preparation_status"] = "terrain_ready"
+    manifest["source_frame"] = "MOON_ME / JPL DE421"
+    manifest["target_reference_radius_m"] = product.source_reference_radius_m
+    manifest["processing_version"] = "lunar-south-polar-v1"
+    manifest["usable_coverage"] = [
+        {"latitude": -89.44, "longitude": -137.9, "status": "observer_sample_supported"},
+        {"latitude": -87.45, "longitude": 77.0, "status": "observer_sample_supported"},
+    ]
+    return manifest
+
+
 def product_manifest(
     product: TerrainProduct,
     path: Path,
@@ -166,51 +223,71 @@ def download_file(
     *,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     expected_sha256: str | None = None,
+    allow_large_file: bool = False,
+    resume: bool = False,
 ) -> dict[str, object]:
     destination = external_path(destination)
     if not 0.0 < timeout_seconds <= 300.0:
         raise ValueError("timeout_seconds must be in (0, 300]")
     if expected_sha256 and not re.fullmatch(r"[0-9a-fA-F]{64}", expected_sha256):
         raise ValueError("expected_sha256 must contain 64 hexadecimal characters")
-    if product.expected_bytes >= LARGE_FILE_THRESHOLD_BYTES:
-        raise ValueError(
-            "large source file download is disabled; inspect metadata or download manually"
-        )
+    if product.expected_bytes >= LARGE_FILE_THRESHOLD_BYTES and not allow_large_file:
+        raise ValueError("large source file download requires --allow-large-download")
     if destination.exists():
         raise FileExistsError(f"refusing to overwrite existing source file: {destination}")
 
     destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path: Path | None = None
+    temporary_path = destination.with_name(destination.name + ".part")
+    lock_path = destination.with_name(destination.name + ".download-lock")
     try:
-        with tempfile.NamedTemporaryFile(
-            mode="wb",
-            prefix=destination.name + ".",
-            suffix=".part",
-            dir=destination.parent,
-            delete=False,
-        ) as output:
-            temporary_path = Path(output.name)
-            request = Request(
-                product.source_url, headers={"User-Agent": "LunarLandingNavigator/1.0"}
-            )
-            with urlopen(request, timeout=timeout_seconds) as response:
-                announced = response.headers.get("Content-Length")
-                if announced is not None and int(announced) != product.expected_bytes:
-                    raise ValueError("provider Content-Length does not match verified product size")
-                total = 0
+        lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError as exc:
+        raise RuntimeError("another terrain download is active for this destination") from exc
+    try:
+        offset = temporary_path.stat().st_size if resume and temporary_path.exists() else 0
+        if offset > product.expected_bytes:
+            raise ValueError("partial source file exceeds the expected product size")
+        if offset == product.expected_bytes:
+            manifest = verify_file(product, temporary_path, expected_sha256)
+            os.replace(temporary_path, destination)
+            manifest["path"] = str(destination)
+            return manifest
+        headers = {"User-Agent": "LunarLandingNavigator/1.0"}
+        if offset:
+            headers["Range"] = f"bytes={offset}-"
+        request = Request(product.source_url, headers=headers)
+        with urlopen(request, timeout=timeout_seconds) as response:
+            if offset and response.status != 206:
+                raise ValueError("provider did not honor the requested byte range")
+            if offset:
+                content_range = response.headers.get("Content-Range", "")
+                if not content_range.startswith(f"bytes {offset}-") or not content_range.endswith(
+                    f"/{product.expected_bytes}"
+                ):
+                    raise ValueError("provider Content-Range does not match the partial file")
+            elif response.status != 200:
+                raise ValueError("provider did not return a complete source file")
+            announced = response.headers.get("Content-Length")
+            expected_response_bytes = product.expected_bytes - offset
+            if announced is not None and int(announced) != expected_response_bytes:
+                raise ValueError("provider Content-Length does not match the expected byte range")
+            mode = "ab" if offset else "wb"
+            with temporary_path.open(mode) as output:
+                total = offset
                 while chunk := response.read(1024 * 1024):
                     total += len(chunk)
                     if total > product.expected_bytes:
                         raise ValueError("provider response exceeds verified product size")
                     output.write(chunk)
+                if total != product.expected_bytes:
+                    raise ValueError("provider response ended before the expected product size")
         manifest = verify_file(product, temporary_path, expected_sha256)
         os.replace(temporary_path, destination)
-        temporary_path = None
         manifest["path"] = str(destination)
         return manifest
     finally:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
+        os.close(lock_fd)
+        lock_path.unlink(missing_ok=True)
 
 
 def write_manifest(manifest: dict[str, object], directory: Path, product_id: str) -> Path:
@@ -226,8 +303,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("product_id", choices=sorted(PRODUCTS))
     parser.add_argument("--file", type=Path, help="Verify an already downloaded source file")
+    parser.add_argument("--download", action="store_true", help="Download the official source file")
     parser.add_argument(
-        "--download", action="store_true", help="Download the small official source file"
+        "--allow-large-download",
+        action="store_true",
+        help="Allow downloading the 2.7 GB regional Product 90 source",
+    )
+    parser.add_argument(
+        "--resume", action="store_true", help="Resume a matching .part file from a prior download"
     )
     parser.add_argument("--data-dir", type=Path, default=default_data_directory())
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS)
@@ -245,9 +328,11 @@ def main() -> int:
             path,
             timeout_seconds=args.timeout,
             expected_sha256=args.sha256,
+            allow_large_file=args.allow_large_download,
+            resume=args.resume,
         )
         if args.download
-        else verify_file(product, path, args.sha256)
+        else verify_raster(product, path, args.sha256)
     )
     manifest_path = write_manifest(manifest, path.parent, product.product_id)
     print(

@@ -3,7 +3,7 @@ import type { ApiClientError } from '../api/errors'
 export function RequestError({ error }: { error: ApiClientError }) {
   const explanation: Record<string, string> = {
     TERRAIN_UNAVAILABLE:
-      'Terrain observations are unavailable. Stage 3 supports geometric observations only.',
+      'Terrain data is unavailable for this location. Choose geometric mode explicitly or select a supported location.',
     JOB_EXPIRED: 'This job has expired. Submit a new observation.',
     JOB_NOT_FOUND: 'This job could not be found. Submit a new observation.',
     JOB_NOT_READY:

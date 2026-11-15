@@ -1,5 +1,5 @@
 from datetime import UTC, datetime, timedelta
-from math import isclose
+from math import isclose, isfinite
 from typing import Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
@@ -13,7 +13,7 @@ class ResolvedSite(BaseModel):
     name: str = Field(min_length=1)
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, lt=180)
-    surface_elevation_m: Literal[0.0]
+    surface_elevation_m: float = Field(allow_inf_nan=False)
     observer_height_m: float = Field(ge=0, le=20)
 
 
@@ -30,10 +30,80 @@ class Meta(BaseModel):
     model_version: str = Field(min_length=1)
     generated_at: AwareDatetime
     data_status: Literal["fresh", "cached"]
-    horizon_mode: Literal["geometric"]
+    horizon_mode: Literal["geometric", "terrain"]
     time_resolution_minutes: Literal[15, 30, 60, 120, 180, 360] | None
-    terrain_dataset_id: None
+    terrain_dataset_id: str | None
     sources: list[Source] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_terrain_provenance(self):
+        if (self.horizon_mode == "terrain") != (self.terrain_dataset_id is not None):
+            raise ValueError("terrain_dataset_id must be present only for terrain mode")
+        return self
+
+
+class TerrainCoverage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    available: bool
+    latitude: float = Field(ge=-90, le=90, allow_inf_nan=False)
+    longitude: float = Field(ge=-180, lt=180, allow_inf_nan=False)
+    region_id: str | None
+    dataset_id: str | None
+    resolution_m: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    source_url: str | None
+    reason: Literal["outside_coverage", "no_data"] | None
+
+    @model_validator(mode="after")
+    def validate_availability(self):
+        if self.available:
+            if (
+                any(
+                    value is None
+                    for value in (
+                        self.region_id,
+                        self.dataset_id,
+                        self.resolution_m,
+                        self.source_url,
+                    )
+                )
+                or self.reason is not None
+            ):
+                raise ValueError("available terrain coverage requires complete source metadata")
+        elif self.reason is None:
+            raise ValueError("unavailable terrain coverage requires a reason")
+        return self
+
+
+class GeographicOrigin(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    latitude: float = Field(ge=-90, le=90, allow_inf_nan=False)
+    longitude: float = Field(ge=-180, lt=180, allow_inf_nan=False)
+    elevation_m: float = Field(allow_inf_nan=False)
+
+
+class Heightmap(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    region_id: str = Field(min_length=1)
+    dataset_id: str = Field(min_length=1)
+    model_version: str = Field(min_length=1)
+    frame: Literal["local_enu"]
+    origin: GeographicOrigin
+    east_min_m: float = Field(allow_inf_nan=False)
+    north_min_m: float = Field(allow_inf_nan=False)
+    spacing_m: float = Field(gt=0, allow_inf_nan=False)
+    width: int = Field(ge=1)
+    height: int = Field(ge=1)
+    elevation_m: list[float] = Field(min_length=1)
+    source_url: str = Field(min_length=1)
+    attribution: str
+
+    @model_validator(mode="after")
+    def validate_grid(self):
+        if len(self.elevation_m) != self.width * self.height:
+            raise ValueError("heightmap elevation length must equal width times height")
+        if any(not isfinite(value) for value in self.elevation_m):
+            raise ValueError("heightmap elevations must be finite")
+        return self
 
 
 class NowResult(BaseModel):

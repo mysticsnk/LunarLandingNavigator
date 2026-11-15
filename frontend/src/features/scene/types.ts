@@ -1,5 +1,5 @@
 /**
- * Types for 3D Lunar Local Scene Visualization (Stage 3)
+ * Types for 3D Lunar Local Scene Visualization (Stage 4)
  */
 
 import type { EnuVector } from '../../lib/coordinates'
@@ -34,6 +34,9 @@ export interface LunarSceneProps {
    * Default: 2.0 metres.
    */
   observerHeightM?: number
+  horizonMode?: 'geometric' | 'terrain'
+  terrainDatasetId?: string | null
+  visibilityMarginDeg?: number
   /**
    * Whether ephemeris or terrain data is currently loading.
    */

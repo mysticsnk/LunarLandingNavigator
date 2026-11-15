@@ -1,16 +1,17 @@
-# Lunar Landing Site Navigator - Stage 3
+# Lunar Landing Site Navigator - Stage 4
 
-The integrated Stage 3 workspace provides catalog/custom-site observations,
-multi-day geometric timelines, durable jobs, CSA resources, lunar imagery and
-an API-driven local sky scene with returned-sample playback.
+The integrated Stage 4 workspace provides catalog/custom-site observations,
+multi-day timelines, terrain-aware visibility from prepared numerical elevation
+data, durable jobs, CSA resources, registered lunar imagery and an API-driven
+local scene with returned-sample playback.
 See [Stage 1 completion and reproduction](docs/integration/STAGE1_COMPLETION.md)
-for the Stage 1 baseline and [Stage 3 validation reports](docs/validation/) for
+for the Stage 1 baseline and [Stage 4 validation reports](docs/validation/) for
 current integration evidence and remaining operational limitations.
 
 Repository root contains the existing `frontend/` and the new `backend/` side by
 side. Run root commands from the directory containing this README, not its parent.
 Frontend configuration is preserved. Map/scene interfaces and shared integration
-are documented in the Stage 1 handoffs and Stage 2/3 validation reports.
+are documented in the Stage 1 handoffs and Stage 2–4 validation reports.
 
 Python baseline is 3.12 (`.python-version` and backend metadata); Node baseline
 is 22.13.0 (`.nvmrc`), with Node 22.13 or newer in the Node 22 series supported.
@@ -123,9 +124,10 @@ runs them now. No frontend package or configuration is created by this backend s
 
 Read `docs/API_V1.md`, `docs/CONTRACT_DECISIONS.md` and
 `contracts/openapi.v1.yaml`. The supplied API v1 specification is documented in
-English with its paths and synthetic fixtures. Stage 3 implements health,
-catalog, CSA resources, single-time and timeline geometric jobs, and registered
-map imagery. Comparison and physical terrain operations remain unregistered.
+English with its paths and synthetic fixtures. Stage 4 implements health,
+catalog, CSA resources, single-time and timeline jobs with geometric or supported
+terrain mode, terrain coverage and heightmap routes, and registered map imagery.
+Comparison remains unregistered.
 Errors use the agreed code, message, details and request_id fields. Remaining
 lunar frame and schema review items are explicit in CONTRACT_DECISIONS.md.
 

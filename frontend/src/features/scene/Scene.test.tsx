@@ -326,7 +326,7 @@ describe('LunarScene component and coordinate orientation', () => {
     expect(screen.getByTestId('hud-sun-label')).toHaveTextContent(/El 4.5°/)
   })
 
-  it('displays geometric horizon reference notice indicating no terrain occlusion when heightmap is absent', () => {
+  it('displays the geometric horizon reference when no heightmap is available', () => {
     render(<LunarScene />)
     const notice = screen.getByTestId('scene-horizon-notice')
     expect(notice).toHaveTextContent(
@@ -337,12 +337,20 @@ describe('LunarScene component and coordinate orientation', () => {
 
   describe('Stage 4 Local Terrain Mesh & Awareness', () => {
     it('renders terrain mesh provenance footer when heightmap is provided', () => {
-      render(<LunarScene heightmap={heightmapFixture} />)
+      render(
+        <LunarScene
+          heightmap={heightmapFixture}
+          horizonMode="terrain"
+          terrainDatasetId={heightmapFixture.dataset_id}
+          visibilityMarginDeg={0.5}
+        />,
+      )
       const notice = screen.getByTestId('scene-horizon-notice')
       expect(notice).toHaveTextContent(/Terrain Mesh: LDEM_80S_20MPP_ADJ/i)
       expect(notice).toHaveTextContent(/stage4-dem-v1/i)
       expect(notice).toHaveTextContent(/50m/i)
       expect(notice).toHaveTextContent(/Backend visibility authoritative/i)
+      expect(notice).toHaveTextContent(/terrain mode · margin 0.5°/i)
     })
 
     it('displays loading overlay when terrain is loading', () => {
@@ -351,9 +359,11 @@ describe('LunarScene component and coordinate orientation', () => {
       expect(screen.getByText(/Loading terrain heightmap/i)).toBeInTheDocument()
     })
 
-    it('displays terrain error banner and falls back to geometric horizon', () => {
+    it('reports a display mesh error without implying a horizon mode fallback', () => {
       render(
         <LunarScene
+          horizonMode="terrain"
+          terrainDatasetId="test-dem-v1"
           terrainError="HTTP 404: Heightmap not found for region invalid-id"
         />,
       )
@@ -362,8 +372,10 @@ describe('LunarScene component and coordinate orientation', () => {
         screen.getByText(/Terrain mesh unavailable/i),
       ).toBeInTheDocument()
       expect(
-        screen.getByText(/falling back to geometric horizon plane/i),
+        screen.getByText(/visibility still uses the selected API horizon mode/i),
       ).toBeInTheDocument()
+      expect(screen.getByTestId('scene-horizon-notice')).toHaveTextContent(/Terrain-aware result/)
+      expect(screen.getByTestId('scene-horizon-notice')).toHaveTextContent(/visibility from API/)
     })
 
     it('displays body horizon elevation in HUD when horizon_elevation_deg is set', () => {

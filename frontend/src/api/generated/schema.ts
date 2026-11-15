@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * getHealth
-         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions use geometric mode only.
+         * @description Implemented. Responses use UTC timestamps ending in Z, and unknown query parameters are rejected.
          */
         get: operations["getHealth"];
         put?: never;
@@ -33,7 +33,7 @@ export interface paths {
         };
         /**
          * listSites
-         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions use geometric mode only.
+         * @description Implemented. Responses use UTC timestamps ending in Z, and unknown query parameters are rejected.
          */
         get: operations["listSites"];
         put?: never;
@@ -53,7 +53,7 @@ export interface paths {
         };
         /**
          * getSite
-         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions use geometric mode only.
+         * @description Implemented. Responses use UTC timestamps ending in Z, and unknown query parameters are rejected.
          */
         get: operations["getSite"];
         put?: never;
@@ -153,7 +153,7 @@ export interface paths {
         };
         /**
          * getTerrainCoverage
-         * @description Planned contract only. Not registered by the Stage 2 backend. Timeline, comparison and physical terrain occlusion are excluded.
+         * @description Reports usable numerical terrain support from a registered prepared dataset; raw imagery extents do not establish terrain availability.
          */
         get: operations["getTerrainCoverage"];
         put?: never;
@@ -173,7 +173,7 @@ export interface paths {
         };
         /**
          * getHeightmap
-         * @description Planned contract only. Not registered by the Stage 2 backend. Timeline, comparison and physical terrain occlusion are excluded.
+         * @description Returns a bounded local ENU display grid for a registered terrain region. Physical visibility calculations use the source elevation data.
          */
         get: operations["getHeightmap"];
         put?: never;
@@ -193,7 +193,7 @@ export interface paths {
         };
         /**
          * listCSAResources
-         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions use geometric mode only.
+         * @description Implemented. Responses use UTC timestamps ending in Z, and unknown query parameters are rejected.
          */
         get: operations["listCSAResources"];
         put?: never;
@@ -215,7 +215,7 @@ export interface paths {
         put?: never;
         /**
          * submitNowRequest
-         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions use geometric mode only.
+         * @description Implemented in Stage 4. Accepts geometric or supported terrain mode; terrain requests never fall back to geometric mode.
          */
         post: operations["submitNowRequest"];
         delete?: never;
@@ -235,7 +235,7 @@ export interface paths {
         put?: never;
         /**
          * submitTimelineRequest
-         * @description Implemented in Stage 3. Timeline calculations use geometric mode; comparison and physical terrain occlusion remain unimplemented.
+         * @description Implemented in Stage 3 and extended in Stage 4. Accepts geometric or supported terrain mode; terrain requests never fall back to geometric mode.
          */
         post: operations["submitTimelineRequest"];
         delete?: never;
@@ -255,7 +255,7 @@ export interface paths {
         put?: never;
         /**
          * submitComparisonRequest
-         * @description Planned contract only. Not registered by the Stage 2 backend. Timeline, comparison and physical terrain occlusion are excluded.
+         * @description Reserved by the API v1 contract but not implemented in Stage 4.
          */
         post: operations["submitComparisonRequest"];
         delete?: never;
@@ -273,7 +273,7 @@ export interface paths {
         };
         /**
          * getJob
-         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 3; now and timeline jobs use geometric mode only.
+         * @description Implemented. Results may use geometric or terrain mode as recorded in their result metadata. Responses use UTC timestamps ending in Z.
          */
         get: operations["getJob"];
         put?: never;
@@ -293,7 +293,7 @@ export interface paths {
         };
         /**
          * getJobResult
-         * @description Unknown request fields and query parameters are rejected. Responses use UTC timestamps ending in Z. Implemented in Stage 2; observation submissions use geometric mode only.
+         * @description Implemented. Results may use geometric or terrain mode as recorded in their result metadata. Responses use UTC timestamps ending in Z.
          */
         get: operations["getJobResult"];
         put?: never;

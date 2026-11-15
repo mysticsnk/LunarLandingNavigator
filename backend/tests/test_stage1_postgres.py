@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from importlib import import_module
 from pathlib import Path
 from threading import Event
+from types import SimpleNamespace
 from uuid import uuid4
 
 import httpx
@@ -14,7 +15,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, insert, select
 from sqlalchemy.engine import make_url
 from sqlalchemy.pool import NullPool
 from test_stage1_jobs import REQUEST, check_schema, controlled
@@ -24,10 +25,17 @@ from app.core.config import get_settings
 from app.core.database import get_engine
 from app.main import create_app
 from app.maps.errors import MapServiceError
-from app.requests import NowRequest
+from app.requests import NowRequest, TimelineRequest
 from app.resources import get_resources
 from app.routes import get_csa_fetcher
-from app.storage import Repository, get_repository, iso, jobs
+from app.storage import (
+    Repository,
+    get_repository,
+    iso,
+    jobs,
+    terrain_datasets,
+    terrain_regions,
+)
 from app.worker import HORIZONS_LOCK, execute_observation, execute_timeline, run_once
 
 pytestmark = pytest.mark.integration
@@ -205,6 +213,158 @@ def test_http_observation_lifecycle_with_postgresql_and_controlled_horizons(
         check_schema("ErrorEnvelope", failed_result.json())
     finally:
         client.close()
+
+
+def test_terrain_observation_job_lifecycle_and_cache_on_postgresql(pg_repo, monkeypatch):
+    dataset_id = "controlled-stage4-dem-v1"
+    site = pg_repo.site("shackleton-connecting-ridge")
+    with pg_repo.engine.begin() as connection:
+        connection.execute(
+            insert(terrain_datasets).values(
+                id=dataset_id,
+                product_version="controlled-fixture-v1",
+                source_url="https://example.invalid/controlled-dem",
+                sha256="a" * 64,
+                asset_path="controlled-test-fixture-only",
+                processing_version="controlled-terrain-model-v1",
+                resolution_m=20.0,
+                retrieved_at=pg_repo.clock(),
+                attribution="Controlled test fixture",
+                ready=1,
+            )
+        )
+        connection.execute(
+            insert(terrain_regions).values(
+                id=site["terrain_region_id"],
+                dataset_id=dataset_id,
+                origin_latitude=site["latitude"],
+                origin_longitude=site["longitude"],
+                spacing_m=20.0,
+                grid_half_extent_m=1280.0,
+            )
+        )
+
+    dataset = pg_repo.terrain_dataset(dataset_id)
+
+    def resolve_controlled_terrain(latitude, longitude, preferred_region_id):
+        return {
+            **dataset,
+            "region_id": preferred_region_id,
+            "surface_elevation_m": 1200.0,
+        }, None
+
+    pg_repo.terrain_dataset_for = resolve_controlled_terrain
+    terrain_service = SimpleNamespace(
+        observer_surface=SimpleNamespace(
+            surface_elevation_m=1200.0,
+            dataset_id=dataset_id,
+            model_version=dataset["processing_version"],
+        ),
+        horizon_elevation=lambda azimuth: SimpleNamespace(horizon_elevation_deg=1.25),
+    )
+
+    @contextmanager
+    def controlled_terrain_service(normalized):
+        assert normalized["terrain_dataset_id"] == dataset_id
+        yield terrain_service, dataset
+
+    monkeypatch.setattr("app.worker.terrain_service_for", controlled_terrain_service)
+    root = Path(__file__).resolve().parents[2]
+    fixtures = {
+        target: json.loads(
+            (root / f"contracts/reference/horizons/shackleton-{target.lower()}.json").read_text(
+                encoding="utf-8"
+            )
+        )["raw_response"]
+        for target in ("Sun", "Earth")
+    }
+    requests = []
+
+    def response(request):
+        requests.append(request.url.params)
+        params = request.url.params
+        target = "Sun" if params["COMMAND"].strip("'") == "10" else "Earth"
+        if "STOP_TIME" not in params:
+            return httpx.Response(200, json=fixtures[target])
+        start = datetime.strptime(params["START_TIME"].strip("'"), "%Y-%m-%d %H:%M:%S")
+        stop = datetime.strptime(params["STOP_TIME"].strip("'"), "%Y-%m-%d %H:%M:%S")
+        step = timedelta(minutes=int(params["STEP_SIZE"].strip("' ").removesuffix("m")))
+        lines = []
+        instant = start
+        while instant < stop:
+            lines.append(f"{instant.strftime('%Y-%b-%d %H:%M:%S')}, , , 180.0, 10.0")
+            instant += step
+        return httpx.Response(
+            200,
+            json={"result": "{source: DE441}\n$$SOE\n" + "\n".join(lines) + "\n$$EOE"},
+        )
+
+    provider_client = httpx.Client(transport=httpx.MockTransport(response))
+    provider = HorizonsProvider(client=provider_client, max_retries=0)
+    request_data = {
+        "site": {"site_id": "shackleton-connecting-ridge"},
+        "target_time": "2027-07-15T12:00:00Z",
+        "horizon_mode": "terrain",
+        "observer_height_m": 2,
+        "visibility_margin_deg": 0,
+    }
+    request = NowRequest.model_validate(request_data)
+    accepted = pg_repo.submit(request, str(uuid4()), submitted=request_data)
+    assert pg_repo.status(accepted["job_id"])["status"] == "queued"
+    assert pg_repo.job(accepted["job_id"])["normalized"]["terrain_dataset_id"] == dataset_id
+
+    assert run_once(
+        pg_repo,
+        executor=lambda normalized: execute_observation(normalized, provider=provider),
+    )
+    status = pg_repo.status(accepted["job_id"])
+    result = pg_repo.result(accepted["job_id"])
+    assert status["status"] == "succeeded"
+    assert status["started_at"] and status["finished_at"]
+    check_schema("NowResult", result)
+    assert result["site"]["surface_elevation_m"] == 1200.0
+    assert result["meta"]["horizon_mode"] == "terrain"
+    assert result["meta"]["terrain_dataset_id"] == dataset_id
+    assert result["meta"]["sources"][-1]["name"] == "Controlled test fixture"
+    assert result["point"]["sun"]["horizon_elevation_deg"] == 1.25
+    assert result["point"]["earth"]["horizon_elevation_deg"] == 1.25
+    assert result["meta"]["data_status"] == "fresh"
+    assert len(requests) == 2
+    assert all(request["SITE_COORD"] == "'-137.9,-89.44,1.202000'" for request in requests)
+
+    cached = pg_repo.submit(request, str(uuid4()), submitted=request_data)
+    assert run_once(pg_repo, executor=lambda _: pytest.fail("Terrain cache hit called provider"))
+    cached_result = pg_repo.result(cached["job_id"])
+    assert pg_repo.status(cached["job_id"])["status"] == "succeeded"
+    assert cached_result["meta"]["data_status"] == "cached"
+    assert cached_result["meta"]["terrain_dataset_id"] == dataset_id
+    assert len(requests) == 2
+
+    timeline_data = {
+        "site": request_data["site"],
+        "start_time": request_data["target_time"],
+        "duration_days": 1,
+        "step_minutes": 360,
+        "horizon_mode": "terrain",
+        "observer_height_m": 2,
+        "visibility_margin_deg": 0,
+    }
+    timeline = TimelineRequest.model_validate(timeline_data)
+    timeline_job = pg_repo.submit(timeline, str(uuid4()), submitted=timeline_data)
+    assert run_once(
+        pg_repo,
+        executor=lambda normalized: execute_timeline(normalized, provider=provider),
+    )
+    timeline_result = pg_repo.result(timeline_job["job_id"])
+    assert pg_repo.status(timeline_job["job_id"])["status"] == "succeeded"
+    check_schema("TimelineResult", timeline_result)
+    assert timeline_result["total_samples"] == len(timeline_result["points"]) == 4
+    assert timeline_result["points"][-1]["timestamp"] != timeline_result["end_time"]
+    assert timeline_result["meta"]["horizon_mode"] == "terrain"
+    assert timeline_result["meta"]["terrain_dataset_id"] == dataset_id
+    assert timeline_result["summary"]["golden_hours"] == 24.0
+    assert len(requests) == 4
+    provider_client.close()
 
 
 @pytest.mark.skipif(

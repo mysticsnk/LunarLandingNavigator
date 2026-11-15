@@ -1,7 +1,7 @@
-import type { NowResult } from '../../api/types'
+import type { NowRequest, NowResult, TerrainCoverage } from '../../api/types'
 import { SourceLink } from '../../components/SourceLink'
 
-export function ObservationResult({ result }: { result: NowResult | null }) {
+export function ObservationResult({ result, request, coverage }: { result: NowResult | null; request?: NowRequest; coverage?: TerrainCoverage | null }) {
   return (
     <section className="workspace-card" aria-labelledby="result-heading">
       <div className="card-heading">
@@ -33,7 +33,7 @@ export function ObservationResult({ result }: { result: NowResult | null }) {
           </p>
           <div className="table-scroll">
             <table className="observation-table">
-              <caption>Returned geometric observation values</caption>
+              <caption>Returned observation values</caption>
               <thead>
                 <tr>
                   <th>Body</th>
@@ -41,6 +41,7 @@ export function ObservationResult({ result }: { result: NowResult | null }) {
                   <th>Elevation</th>
                   <th>Horizon</th>
                   <th>Visible</th>
+                  <th>Visibility margin</th>
                 </tr>
               </thead>
               <tbody>
@@ -51,6 +52,7 @@ export function ObservationResult({ result }: { result: NowResult | null }) {
                     <td>{result.point[body].elevation_deg}°</td>
                     <td>{result.point[body].horizon_elevation_deg}°</td>
                     <td>{result.point[body].visible ? 'Yes' : 'No'}</td>
+                    <td>{request?.visibility_margin_deg ?? 0}°</td>
                   </tr>
                 ))}
               </tbody>
@@ -67,6 +69,16 @@ export function ObservationResult({ result }: { result: NowResult | null }) {
           <dl className="model-details">
             <dt>Horizon mode</dt>
             <dd>{result.meta.horizon_mode}</dd>
+            {result.meta.horizon_mode === 'terrain' && (
+              <>
+                <dt>Terrain dataset</dt>
+                <dd>{result.meta.terrain_dataset_id ?? 'Not reported'}</dd>
+                {coverage?.resolution_m != null && <><dt>Terrain resolution</dt><dd>{coverage.resolution_m} m</dd></>}
+                {coverage?.source_url && <><dt>Terrain source</dt><dd><SourceLink url={coverage.source_url}>Dataset source ↗</SourceLink></dd></>}
+              </>
+            )}
+            <dt>Visibility margin</dt>
+            <dd>{request?.visibility_margin_deg ?? 0}°</dd>
             <dt>Surface elevation</dt>
             <dd>{result.site.surface_elevation_m} m</dd>
             <dt>Observer height above surface</dt>
@@ -76,6 +88,9 @@ export function ObservationResult({ result }: { result: NowResult | null }) {
             <dt>Result generated</dt>
             <dd>{result.meta.generated_at} (UTC)</dd>
           </dl>
+          {(['sun', 'earth'] as const).some((body) => result.point[body].elevation_deg > 0 && !result.point[body].visible) && (
+            <p className="muted">An object can be above the zero-degree reference and still be blocked by the terrain horizon or the selected visibility margin.</p>
+          )}
           <h3>Scientific sources</h3>
           <ul className="source-list">
             {result.meta.sources.map((source, i) => (

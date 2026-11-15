@@ -312,7 +312,7 @@ def test_adapter_calls_only_the_agreed_astronomy_service(monkeypatch, stage_repo
         calls.append(kwargs)
         return point
 
-    monkeypatch.setattr(worker, "calculate_geometric_observation", calculate)
+    monkeypatch.setattr(worker, "calculate_observation", calculate)
     output = worker.execute_observation(normalized)
     assert calls[0]["observer_height_m"] == normalized["site"]["observer_height_m"]
     assert calls[0]["longitude"] == -137.9

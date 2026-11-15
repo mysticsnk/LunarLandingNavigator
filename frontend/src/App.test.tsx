@@ -23,6 +23,7 @@ import {
 } from './test/fixtures'
 import type { LunarMapProps } from './features/map'
 import type { LunarSceneProps } from './features/scene'
+import { useHeightmap } from './features/scene'
 
 const visual = vi.hoisted(() => ({ map: vi.fn(), scene: vi.fn() }))
 vi.mock('./features/map', () => ({
@@ -64,6 +65,10 @@ beforeEach(() => {
     timestamp: '2026-11-14T10:00:00Z',
   })
   vi.spyOn(apiClient, 'getSites').mockResolvedValue(catalog)
+  vi.spyOn(apiClient, 'getTerrainCoverage').mockResolvedValue({
+    available: true, latitude: -89.44, longitude: -137.9, region_id: 'test-region',
+    dataset_id: 'test-dem-v1', resolution_m: 20, source_url: 'https://example.org/dem', reason: null,
+  })
   vi.spyOn(apiClient, 'getResources').mockResolvedValue(resources)
   vi.spyOn(apiClient, 'submitNow').mockResolvedValue(accepted)
   vi.spyOn(apiClient, 'getJob').mockResolvedValue(succeeded)
@@ -92,7 +97,7 @@ async function selectCatalog() {
   })
 }
 
-describe('Stage 3 observation workspace', () => {
+describe('Stage 4 observation workspace', () => {
   it('does not replace a failed layer catalog with static operational imagery', async () => {
     vi.mocked(apiClient.getMapLayers)
       .mockRejectedValueOnce(
@@ -116,11 +121,9 @@ describe('Stage 3 observation workspace', () => {
     expect(screen.getByTestId('app-title')).toHaveTextContent(
       'Lunar Landing Site Navigator',
     )
-    expect(screen.getByText('Stage 3')).toBeInTheDocument()
+    expect(screen.getByText('Stage 4')).toBeInTheDocument()
     expect(screen.getByText(/Sun visibility: Unknown/)).toBeInTheDocument()
-    expect(
-      screen.getByText('Simultaneous availability: Unknown'),
-    ).toBeInTheDocument()
+    expect(screen.getByText('Simultaneous availability: Unknown')).toBeInTheDocument()
     expect(visual.scene.mock.lastCall![0]).toMatchObject({
       sunDirectionEnu: null,
       earthDirectionEnu: null,
@@ -262,7 +265,7 @@ describe('Stage 3 observation workspace', () => {
     )
     expect(screen.getByLabelText('Catalog site')).toHaveValue('')
   })
-  it('displays actual returned values and provenance, integrates ENU vectors, and clears them on edit', async () => {
+  it('displays actual returned values and provenance, integrates ENU vectors, and keeps the old result tied to its scenario on edit', async () => {
     vi.mocked(apiClient.getResult).mockResolvedValue({
       ...observationResult,
       meta: { ...observationResult.meta, data_status: 'cached' },
@@ -313,14 +316,38 @@ describe('Stage 3 observation workspace', () => {
     fireEvent.change(screen.getByLabelText('Observer height (m)'), {
       target: { value: '3' },
     })
-    expect(screen.queryByText('Synthetic development site')).toBeNull()
-    expect(
-      screen.getByText('Simultaneous availability: Unknown'),
-    ).toBeInTheDocument()
+    expect(screen.getByText('Synthetic development site')).toBeInTheDocument()
+    expect(screen.getByText(/Displayed result uses geometric mode/)).toBeInTheDocument()
+    expect(screen.getByText(/Simultaneous availability:/)).toBeInTheDocument()
     expect(visual.scene.mock.lastCall![0]).toMatchObject({
-      sunDirectionEnu: null,
-      earthDirectionEnu: null,
+      sunDirectionEnu: observationResult.point.sun.direction_enu,
+      earthDirectionEnu: observationResult.point.earth.direction_enu,
     })
+  })
+  it('checks terrain coverage, submits only an explicit supported terrain request, and does not fall back', async () => {
+    render(<App />)
+    await selectCatalog()
+    fireEvent.change(screen.getByLabelText('Horizon mode'), { target: { value: 'terrain' } })
+    expect(await screen.findByText(/Terrain supported.*test-dem-v1.*20 m/)).toBeInTheDocument()
+    expect(vi.mocked(useHeightmap)).toHaveBeenLastCalledWith('test-region')
+    fireEvent.change(screen.getByLabelText('Observer height (m)'), { target: { value: '3' } })
+    expect(screen.getByText(/Terrain supported.*test-dem-v1.*20 m/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Request observation' }))
+    await waitFor(() => expect(apiClient.submitNow).toHaveBeenCalledWith(expect.objectContaining({ horizon_mode: 'terrain', observer_height_m: 3 }), expect.any(Object)))
+  })
+  it.each([
+    ['unsupported', { available: false, latitude: -89.44, longitude: -137.9, region_id: null, dataset_id: null, resolution_m: null, source_url: null, reason: 'outside_coverage' }],
+    ['failed', new ApiClientError({ code: 'NETWORK_ERROR', message: 'coverage down' })],
+  ] as const)('blocks terrain submission on %s coverage without changing mode', async (_state, coverageResult) => {
+    if (coverageResult instanceof Error) vi.mocked(apiClient.getTerrainCoverage).mockRejectedValue(coverageResult)
+    else vi.mocked(apiClient.getTerrainCoverage).mockResolvedValue(coverageResult)
+    render(<App />)
+    await selectCatalog()
+    fireEvent.change(screen.getByLabelText('Horizon mode'), { target: { value: 'terrain' } })
+    await screen.findByRole('alert')
+    fireEvent.click(screen.getByRole('button', { name: 'Request observation' }))
+    expect(apiClient.submitNow).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Horizon mode')).toHaveValue('terrain')
   })
   it.each([
     'TERRAIN_UNAVAILABLE',

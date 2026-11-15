@@ -14,6 +14,7 @@ import type {
   TimelineResult,
   CSAResources,
   LayerList,
+  TerrainCoverage,
   Heightmap,
 } from './types'
 
@@ -533,6 +534,25 @@ export class ApiClient {
       )
     )
       invalidResponse('Unsupported or invalid lunar map metadata')
+    return value
+  }
+
+  async getTerrainCoverage(
+    latitude: number,
+    longitude: number,
+    options?: RequestOptions,
+  ): Promise<TerrainCoverage> {
+    const query = new URLSearchParams({ latitude: String(latitude), longitude: String(longitude) })
+    const value = await this.request<TerrainCoverage>(`/api/v1/terrain/coverage?${query}`, options)
+    if (!value || typeof value.available !== 'boolean' ||
+      !number(value.latitude, -90, 90) || !number(value.longitude, -180, 180) || value.longitude === 180 ||
+      !(value.region_id === null || typeof value.region_id === 'string') ||
+      !(value.dataset_id === null || typeof value.dataset_id === 'string') ||
+      !(value.resolution_m === null || (typeof value.resolution_m === 'number' && Number.isFinite(value.resolution_m) && value.resolution_m > 0)) ||
+      !(value.source_url === null || typeof value.source_url === 'string') ||
+      !(value.reason === null || value.reason === 'outside_coverage' || value.reason === 'no_data') ||
+      value.available !== (value.reason === null))
+      invalidResponse('Invalid terrain coverage response')
     return value
   }
 

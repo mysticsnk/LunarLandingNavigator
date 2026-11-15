@@ -272,12 +272,12 @@ const SceneContent: React.FC<{
 }
 
 /**
- * Pure 3D Local Scene Component for Stage 3.
+ * Pure 3D Local Scene Component for Stage 4.
  *
  * Implements:
  * - Real direction ENU vectors mapped to Three.js scene (x=east, y=up, z=-north)
  * - Strict separation of visual scaling from physical coordinates
- * - Observer marker & clearly labelled geometric horizon reference
+ * - Optional display-only terrain mesh with backend-authoritative visibility
  * - Azimuth and elevation labels agreeing with marker position above/below horizon
  * - Full Error Boundary isolation for WebGL failures
  * - Preserved observation timestamps and cache status display
@@ -289,6 +289,9 @@ export const LunarScene: React.FC<LunarSceneProps> = (props) => {
     earthDirectionEnu,
     observationPoint,
     observerHeightM = 2,
+    horizonMode = 'geometric',
+    terrainDatasetId,
+    visibilityMarginDeg,
     isLoading = false,
     dataStatus,
     timestamp,
@@ -492,7 +495,7 @@ export const LunarScene: React.FC<LunarSceneProps> = (props) => {
             fontSize: '0.65rem',
           }}
         >
-          Terrain mesh unavailable ({terrainError}); falling back to geometric horizon plane.
+          Terrain mesh unavailable ({terrainError}); visibility still uses the selected API horizon mode.
         </div>
       )}
 
@@ -518,14 +521,18 @@ export const LunarScene: React.FC<LunarSceneProps> = (props) => {
               Terrain Mesh: {heightmap.dataset_id} · Res: {heightmap.spacing_m}m · Model: {heightmap.model_version}
               {visualExaggeration !== 1.0 ? ` (Exaggeration: ${visualExaggeration}×)` : ''}
             </span>
-            <span>Backend visibility authoritative · GPU shadows are visual aids only</span>
+            <span>
+              Backend visibility authoritative · {horizonMode} mode · margin {visibilityMarginDeg ?? 0}° · GPU shadows are visual aids only
+            </span>
           </>
         ) : (
           <>
             <span>
-              Geometric Reference Horizon (Elevation 0.0°) · Local ENU scene
+              {horizonMode === 'terrain' ? 'Terrain-aware result' : 'Geometric Reference Horizon (Elevation 0.0°)'} · Local ENU scene
             </span>
-            <span>Terrain occlusion not modeled</span>
+            <span>{horizonMode === 'terrain'
+              ? `Dataset ${terrainDatasetId ?? 'not reported'} · margin ${visibilityMarginDeg ?? 0}° · visibility from API`
+              : `Terrain occlusion not modeled · margin ${visibilityMarginDeg ?? 0}°`}</span>
           </>
         )}
       </div>
