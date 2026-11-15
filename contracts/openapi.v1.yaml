@@ -882,7 +882,7 @@ paths:
     get:
       operationId: getTerrainCoverage
       summary: getTerrainCoverage
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters:
       - name: latitude
         in: query
@@ -1003,14 +1003,12 @@ paths:
                 unavailable:
                   summary: Development/test fixture; not measured NASA results
                   externalValue: ./examples/terrain-unavailable.json
-      description: Planned contract only. Not registered by the Stage 2 backend.
-        Timeline, comparison and physical terrain occlusion are excluded.
       x-reject-unknown-query-parameters: true
   /api/v1/terrain/regions/{region_id}/heightmap:
     get:
       operationId: getHeightmap
       summary: getHeightmap
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters:
       - name: region_id
         in: path
@@ -1117,8 +1115,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Heightmap'
-      description: Planned contract only. Not registered by the Stage 2 backend.
-        Timeline, comparison and physical terrain occlusion are excluded.
       x-reject-unknown-query-parameters: true
   /api/v1/resources/csa:
     get:

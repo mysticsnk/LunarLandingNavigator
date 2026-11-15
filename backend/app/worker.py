@@ -3,70 +3,143 @@ import logging
 import multiprocessing
 import signal
 import time
+from contextlib import contextmanager
 from copy import deepcopy
+from pathlib import Path
 
 from app.astronomy import (
     HorizonsError,
     HorizonsHttpError,
     HorizonsProvider,
     HorizonsTransportError,
-    calculate_geometric_observation,
-    calculate_geometric_timeline,
+    calculate_observation,
+    calculate_timeline,
 )
 from app.core.config import get_settings
 from app.core.problems import APIProblem
 from app.requests import canonical_time
 from app.results import NowResult, TimelineResult
-from app.storage import MODEL_VERSION, get_repository, iso, utcnow
+from app.storage import get_repository, iso, utcnow
 
 LOGGER = logging.getLogger(__name__)
 HORIZONS_LOCK = 740101
 
 
-def execute_observation(normalized):
+@contextmanager
+def terrain_service_for(normalized):
+    if normalized["horizon_mode"] == "geometric":
+        yield None, None
+        return
+    from app.terrain import TerrainHorizonService
+    from app.terrain.horizon import TerrainCoverageError
+    from app.terrain.raster import GeoTiffTerrainSource
+
+    repository = get_repository()
+    dataset = repository.terrain_dataset(normalized.get("terrain_dataset_id"))
+    if dataset is None or dataset["processing_version"] != normalized.get("processing_version"):
+        raise APIProblem(
+            422,
+            "TERRAIN_UNAVAILABLE",
+            "The terrain dataset selected for this job is unavailable.",
+            [{"field": "horizon_mode", "reason": "no_data"}],
+        )
+    try:
+        source = GeoTiffTerrainSource(
+            Path(dataset["asset_path"]),
+            dataset_id=dataset["id"],
+            model_version=dataset["processing_version"],
+            source_url=dataset["source_url"],
+            source_frame="MOON_ME / JPL DE421",
+            reference_radius_m=1_737_400.0,
+        )
+        service = TerrainHorizonService(
+            source,
+            latitude=normalized["site"]["latitude"],
+            longitude=normalized["site"]["longitude"],
+            observer_height_m=normalized["observer_height_m"],
+        )
+    except TerrainCoverageError as exc:
+        if "source" in locals():
+            source.close()
+        raise APIProblem(
+            422,
+            "TERRAIN_UNAVAILABLE",
+            "Terrain data is unavailable for the requested location.",
+            [{"field": "site", "reason": exc.reason}],
+        ) from exc
+    except (OSError, ValueError) as exc:
+        if "source" in locals():
+            source.close()
+        raise APIProblem(
+            503, "TERRAIN_DATA_UNAVAILABLE", "Prepared terrain data could not be read"
+        ) from exc
+    try:
+        yield service, dataset
+    finally:
+        source.close()
+
+
+def execute_observation(normalized, provider=None):
     settings = get_settings()
-    point = calculate_geometric_observation(
-        latitude=normalized["site"]["latitude"],
-        longitude=normalized["site"]["longitude"],
-        target_time=normalized["target_time"],
-        observer_height_m=normalized["observer_height_m"],
-        visibility_margin_deg=normalized["visibility_margin_deg"],
-        provider=HorizonsProvider(timeout=settings.horizons_timeout_seconds, max_retries=1),
-    )
+    with terrain_service_for(normalized) as (terrain_service, terrain_dataset):
+        point = calculate_observation(
+            latitude=normalized["site"]["latitude"],
+            longitude=normalized["site"]["longitude"],
+            target_time=normalized["target_time"],
+            horizon_mode=normalized["horizon_mode"],
+            terrain_service=terrain_service,
+            observer_height_m=normalized["observer_height_m"],
+            visibility_margin_deg=normalized["visibility_margin_deg"],
+            provider=provider
+            or HorizonsProvider(timeout=settings.horizons_timeout_seconds, max_retries=1),
+        )
     if canonical_time(point.timestamp) != normalized["target_time"]:
         raise APIProblem(
             502, "PROVIDER_TIME_MISMATCH", "Astronomy service changed the requested time"
         )
     if not point.sources:
         raise APIProblem(502, "PROVIDER_ERROR", "Astronomy service returned no provenance")
+    sources = [s.to_contract_source() for s in point.sources]
+    if terrain_dataset:
+        sources.append(
+            {
+                "name": terrain_dataset["attribution"],
+                "url": terrain_dataset["source_url"],
+                "version": terrain_dataset["product_version"],
+                "fetched_at": iso(terrain_dataset["retrieved_at"]),
+            }
+        )
     return {
         "site": normalized["site"],
         "point": point.model_dump(),
         "meta": {
-            "model_version": MODEL_VERSION,
+            "model_version": normalized["model_version"],
             "generated_at": iso(utcnow()),
             "data_status": "fresh",
-            "horizon_mode": "geometric",
+            "horizon_mode": normalized["horizon_mode"],
             "time_resolution_minutes": None,
-            "terrain_dataset_id": None,
-            "sources": [s.to_contract_source() for s in point.sources],
+            "terrain_dataset_id": normalized.get("terrain_dataset_id"),
+            "sources": sources,
         },
     }
 
 
 def execute_timeline(normalized, provider=None):
     settings = get_settings()
-    timeline = calculate_geometric_timeline(
-        latitude=normalized["site"]["latitude"],
-        longitude=normalized["site"]["longitude"],
-        start_time=normalized["start_time"],
-        duration_days=normalized["duration_days"],
-        step_minutes=normalized["step_minutes"],
-        observer_height_m=normalized["observer_height_m"],
-        visibility_margin_deg=normalized["visibility_margin_deg"],
-        provider=provider
-        or HorizonsProvider(timeout=settings.horizons_timeout_seconds, max_retries=1),
-    )
+    with terrain_service_for(normalized) as (terrain_service, terrain_dataset):
+        timeline = calculate_timeline(
+            latitude=normalized["site"]["latitude"],
+            longitude=normalized["site"]["longitude"],
+            start_time=normalized["start_time"],
+            duration_days=normalized["duration_days"],
+            step_minutes=normalized["step_minutes"],
+            horizon_mode=normalized["horizon_mode"],
+            terrain_service=terrain_service,
+            observer_height_m=normalized["observer_height_m"],
+            visibility_margin_deg=normalized["visibility_margin_deg"],
+            provider=provider
+            or HorizonsProvider(timeout=settings.horizons_timeout_seconds, max_retries=1),
+        )
     if (
         canonical_time(timeline.start_time) != normalized["start_time"]
         or canonical_time(timeline.end_time) != normalized["end_time"]
@@ -77,6 +150,16 @@ def execute_timeline(normalized, provider=None):
         )
     if not timeline.sources:
         raise APIProblem(502, "PROVIDER_ERROR", "Astronomy service returned no provenance")
+    sources = [source.to_contract_source() for source in timeline.sources]
+    if terrain_dataset:
+        sources.append(
+            {
+                "name": terrain_dataset["attribution"],
+                "url": terrain_dataset["source_url"],
+                "version": terrain_dataset["product_version"],
+                "fetched_at": iso(terrain_dataset["retrieved_at"]),
+            }
+        )
     return {
         **timeline.model_dump(mode="json"),
         "site": normalized["site"],
@@ -84,10 +167,10 @@ def execute_timeline(normalized, provider=None):
             "model_version": normalized["model_version"],
             "generated_at": iso(utcnow()),
             "data_status": "fresh",
-            "horizon_mode": "geometric",
+            "horizon_mode": normalized["horizon_mode"],
             "time_resolution_minutes": normalized["step_minutes"],
-            "terrain_dataset_id": None,
-            "sources": [source.to_contract_source() for source in timeline.sources],
+            "terrain_dataset_id": normalized.get("terrain_dataset_id"),
+            "sources": sources,
         },
     }
 
@@ -104,6 +187,15 @@ def execute_job(normalized):
 def calculation_error(exc):
     if isinstance(exc, APIProblem):
         return exc
+    from app.terrain.horizon import TerrainCoverageError
+
+    if isinstance(exc, TerrainCoverageError):
+        return APIProblem(
+            422,
+            "TERRAIN_UNAVAILABLE",
+            "Terrain data is unavailable for the requested location.",
+            [{"field": "site", "reason": exc.reason}],
+        )
     if isinstance(exc, HorizonsTransportError) or (
         isinstance(exc, HorizonsHttpError) and exc.status_code in (429, 503, 504)
     ):
