@@ -157,6 +157,7 @@ export function TimelineAnalytics({
       <svg
         className="timeline-chart"
         viewBox="0 0 960 280"
+        preserveAspectRatio="none"
         role="img"
         aria-label="Sun and Earth elevation at returned UTC timestamps. Click to select the nearest sample."
         onClick={selectNearestSample}

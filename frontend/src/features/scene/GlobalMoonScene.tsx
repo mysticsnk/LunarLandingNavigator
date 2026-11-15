@@ -15,13 +15,13 @@ import type { GlobalMoonSceneProps } from './types'
 import type { Site, ResolvedSite } from '../../api/types'
 
 /** Physical and display constants */
-const MOON_RADIUS = 2.5
-const SUN_DISTANCE = 11.0
-const EARTH_DISTANCE = 8.5
-const DEFAULT_CAMERA_POS: [number, number, number] = [4.3, 2.7, 7.2]
-const SOUTH_POLE_CAMERA_POS: [number, number, number] = [0.1, -6.5, 2.0]
-const NEAR_SIDE_CAMERA_POS: [number, number, number] = [7.0, 0.5, 0.0]
-const FAR_SIDE_CAMERA_POS: [number, number, number] = [-7.0, 0.5, 0.0]
+const MOON_RADIUS = 3.2
+const SUN_DISTANCE = 24.0
+const EARTH_DISTANCE = 17.5
+const DEFAULT_CAMERA_POS: [number, number, number] = [4.8, 2.9, 7.6]
+const SOUTH_POLE_CAMERA_POS: [number, number, number] = [0.1, -7.6, 2.2]
+const NEAR_SIDE_CAMERA_POS: [number, number, number] = [8.4, 0.5, 0.0]
+const FAR_SIDE_CAMERA_POS: [number, number, number] = [-8.4, 0.5, 0.0]
 
 const MoonGraticule: React.FC = () => {
   const geometry = useMemo(() => buildMoonGraticuleGeometry(MOON_RADIUS * 1.002), [])
@@ -54,8 +54,8 @@ const CameraControls: React.FC<ControlsProps> = ({ cameraTarget }) => {
     const controls = new OrbitControls(camera, gl.domElement)
     controls.enableDamping = true
     controls.dampingFactor = 0.08
-    controls.minDistance = 3.2
-    controls.maxDistance = 22.0
+    controls.minDistance = 3.8
+    controls.maxDistance = 38.0
     controlsRef.current = controls
 
     return () => {
@@ -96,6 +96,12 @@ const CommunicationLink: React.FC<CommLinkProps> = ({ earthPos, sitePos, visible
     return new THREE.BufferGeometry().setFromPoints([earthPos, sitePos])
   }, [earthPos, sitePos])
 
+  useEffect(() => {
+    return () => {
+      lineGeo.dispose()
+    }
+  }, [lineGeo])
+
   // Restrained traveling pulse along the line when visible === true
   useFrame(({ clock }) => {
     if (visible === true && pulseRef.current) {
@@ -104,53 +110,38 @@ const CommunicationLink: React.FC<CommLinkProps> = ({ earthPos, sitePos, visible
     }
   })
 
+  const isBlocked = visible === false
+
+  const lineObj = useMemo(() => {
+    const mat = new THREE.LineBasicMaterial({
+      color: isBlocked ? '#666666' : '#00f0ff',
+      transparent: true,
+      opacity: isBlocked ? 0.45 : 0.85,
+    })
+    return new THREE.Line(lineGeo, mat)
+  }, [lineGeo, isBlocked])
+
+  useEffect(() => {
+    return () => {
+      if (lineObj.material instanceof THREE.Material) {
+        lineObj.material.dispose()
+      }
+    }
+  }, [lineObj])
+
   if (visible === null) {
     return null
   }
 
-  if (visible === false) {
-    // Inactive / Blocked link: Dashed gray line, no traveling pulse
-    return (
-      <group data-testid="comm-link-blocked">
-        <primitive
-          object={
-            new THREE.Line(
-              lineGeo,
-              new THREE.LineDashedMaterial({
-                color: '#666666',
-                dashSize: 0.3,
-                gapSize: 0.2,
-                linewidth: 1,
-              }),
-            )
-          }
-        />
-      </group>
-    )
-  }
-
-  // Active link: Glowing cyan/white line with travelling signal pulse
   return (
-    <group data-testid="comm-link-active">
-      {/* Main beam */}
-      <primitive
-        object={
-          new THREE.Line(
-            lineGeo,
-            new THREE.LineBasicMaterial({
-              color: '#00f0ff',
-              linewidth: 2,
-              transparent: true,
-              opacity: 0.85,
-            }),
-          )
-        }
-      />
-      {/* Travelling signal pulse */}
-      <mesh ref={pulseRef} position={earthPos}>
-        <sphereGeometry args={[0.08, 16, 16]} />
-        <meshBasicMaterial color="#ffffff" />
-      </mesh>
+    <group data-testid={isBlocked ? 'comm-link-blocked' : 'comm-link-active'}>
+      <primitive object={lineObj} dispose={null} />
+      {!isBlocked && (
+        <mesh ref={pulseRef} position={earthPos}>
+          <sphereGeometry args={[0.08, 16, 16]} />
+          <meshBasicMaterial color="#ffffff" />
+        </mesh>
+      )}
     </group>
   )
 }
@@ -251,12 +242,25 @@ const GlobalSceneContent: React.FC<SceneContentProps> = ({
   observationPoint,
   cameraPreset,
 }) => {
-  const sourceTexture = useLoader(THREE.TextureLoader, '/assets/lroc_color_2k.jpg')
+  const [sourceTexture, sourceNormal, sourceEarth] = useLoader(THREE.TextureLoader, [
+    '/assets/lroc_color_8k.jpg',
+    '/assets/lroc_normal_8k.jpg',
+    '/assets/world.topo.bathy.200411.3x5400x2700.jpg',
+  ])
   const moonTexture = useMemo(() => {
     const texture = sourceTexture.clone()
     texture.colorSpace = THREE.SRGBColorSpace
     return texture
   }, [sourceTexture])
+  const normalTexture = useMemo(() => {
+    const texture = sourceNormal.clone()
+    return texture
+  }, [sourceNormal])
+  const earthTexture = useMemo(() => {
+    const texture = sourceEarth.clone()
+    texture.colorSpace = THREE.SRGBColorSpace
+    return texture
+  }, [sourceEarth])
 
   // Selected site position in global scene coordinates
   const sitePos = useMemo(() => {
@@ -323,27 +327,27 @@ const GlobalSceneContent: React.FC<SceneContentProps> = ({
     <>
       <CameraControls cameraTarget={cameraPreset} />
 
-      {/* Lighting: Neutral geographic lighting before observation, astronomical directional light after observation */}
+      {/* Lighting: Deep space contrast with directional sun and high-relief crater shadows */}
       {sunPos ? (
         <>
-          <ambientLight intensity={0.25} color="#dbe2ef" />
+          <ambientLight intensity={0.05} color="#0c1320" />
           <directionalLight
             position={sunPos}
-            intensity={2.8}
-            color="#fff8e7"
+            intensity={3.8}
+            color="#fff6e4"
             castShadow
           />
         </>
       ) : (
         <>
-          {/* Neutral studio geographic lighting ensuring complete 3D sphere is visible before observation */}
-          <ambientLight intensity={0.65} color="#ffffff" />
-          <directionalLight position={[6, 4, 8]} intensity={1.6} color="#ffffff" />
-          <directionalLight position={[-6, -2, -6]} intensity={0.45} color="#90a0b8" />
+          {/* High-relief directional geographic lighting ensuring craters pop out with natural deep shadows */}
+          <ambientLight intensity={0.15} color="#ffffff" />
+          <directionalLight position={[6.5, 2.8, 7.5]} intensity={2.6} color="#fffcf5" />
+          <directionalLight position={[-6.5, -1.2, -5.5]} intensity={0.06} color="#455570" />
         </>
       )}
 
-      {/* Spherical Moon with reliable visible fallback */}
+      {/* Spherical Moon with high-resolution normal map */}
       <mesh
         data-testid="global-moon-sphere"
         onClick={handleGlobeClick}
@@ -352,15 +356,17 @@ const GlobalSceneContent: React.FC<SceneContentProps> = ({
         <meshStandardMaterial
           color="#ffffff"
           map={moonTexture}
-          roughness={0.96}
-          metalness={0}
+          normalMap={normalTexture}
+          normalScale={new THREE.Vector2(2.6, 2.6)}
+          roughness={0.95}
+          metalness={0.0}
         />
       </mesh>
       <MoonGraticule />
 
       {/* Selected location marker highlight */}
       <mesh position={sitePos}>
-        <sphereGeometry args={[0.07, 16, 16]} />
+        <sphereGeometry args={[0.09, 16, 16]} />
         <meshBasicMaterial color="#ffc53d" />
       </mesh>
 
@@ -391,32 +397,42 @@ const GlobalSceneContent: React.FC<SceneContentProps> = ({
       {sunPos && (
         <group position={sunPos} data-testid="global-sun-representation">
           <mesh>
-            <sphereGeometry args={[0.65, 32, 32]} />
+            <sphereGeometry args={[2.4, 32, 32]} />
             <meshBasicMaterial color="#fff4cc" />
           </mesh>
-          <pointLight color="#fff0b3" intensity={1.5} distance={20} />
+          {/* Subtle solar corona */}
+          <mesh>
+            <sphereGeometry args={[2.75, 32, 32]} />
+            <meshBasicMaterial
+              color="#ffe58f"
+              transparent
+              opacity={0.25}
+              side={THREE.BackSide}
+            />
+          </mesh>
+          <pointLight color="#fff0b3" intensity={2.4} distance={45} />
         </group>
       )}
 
       {/* Earth Representation */}
       {earthPos && (
         <group position={earthPos} data-testid="global-earth-representation">
-          {/* Earth sphere */}
+          {/* Textured Earth sphere */}
           <mesh>
-            <sphereGeometry args={[0.5, 32, 32]} />
+            <sphereGeometry args={[2.2, 48, 48]} />
             <meshStandardMaterial
-              color="#1a73e8"
-              roughness={0.6}
-              metalness={0.1}
+              map={earthTexture}
+              roughness={0.7}
+              metalness={0.05}
             />
           </mesh>
           {/* Atmospheric halo */}
           <mesh>
-            <sphereGeometry args={[0.54, 32, 32]} />
+            <sphereGeometry args={[2.36, 48, 48]} />
             <meshBasicMaterial
               color="#80d8ff"
               transparent
-              opacity={0.3}
+              opacity={0.35}
               side={THREE.BackSide}
             />
           </mesh>
@@ -628,7 +644,7 @@ export const GlobalMoonScene: React.FC<GlobalMoonSceneProps> = ({
             }
           >
             <Canvas
-              camera={{ position: DEFAULT_CAMERA_POS, fov: 40, near: 0.1, far: 80 }}
+              camera={{ position: DEFAULT_CAMERA_POS, fov: 40, near: 0.1, far: 140 }}
               shadows
               style={{ width: '100%', height: '100%' }}
               data-testid="global-moon-canvas"
