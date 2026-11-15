@@ -241,6 +241,13 @@ export function ObservationWorkspace() {
       : result?.site
   const effectiveSite =
     displayedSite ?? (draft.mode === 'catalog' ? draft.site : null)
+  const inspectorTime = selectedPoint?.timestamp ?? (
+    workflow === 'comparison'
+      ? comparisonResult?.ranked_scenarios[0]?.start_time
+      : workflow === 'timeline'
+        ? timelineResult?.start_time
+        : result?.point.timestamp
+  ) ?? `${draft.utcTime.replace('T', ' ')} UTC`
   const activeCatalogSite =
     displayedSite?.site_id
       ? catalog?.items.find((item) => item.id === displayedSite.site_id) ??
@@ -284,12 +291,19 @@ export function ObservationWorkspace() {
         </p>
       </div>
       <div className="main-grid">
+        <nav className="activity-rail" aria-label="Workstation panels">
+          <a href="#scenario-heading" aria-label="Site directory and controls" title="Sites">SITE</a>
+          <a href="#map-heading" aria-label="Global Moon view" title="Global Moon">MOON</a>
+          <a href="#site-inspector" aria-label="Selected site inspector" title="Site inspector">INFO</a>
+          <a href="#scene-heading" aria-label="Local terrain preview" title="Local terrain">TERRAIN</a>
+          <a href="#workstation-results" aria-label="Timeline and results" title="Timeline and results">DATA</a>
+        </nav>
         <aside className="grid-sidebar">
           <section
             className="workspace-card"
             aria-labelledby="scenario-heading"
           >
-            <h2 id="scenario-heading">Observation setup</h2>
+            <h2 id="scenario-heading">Site directory & controls</h2>
             <form onSubmit={submit} noValidate>
               <fieldset>
                 <legend>Analysis</legend>
@@ -722,6 +736,8 @@ export function ObservationWorkspace() {
                 />
               </div>
 
+              <details className="registered-map-details">
+                <summary>Registered lunar map layers</summary>
               {/* Registered 2D Layer Map with Layer Switching */}
               {!mapLayers && !mapError && (
                 <p role="status">Loading map layers...</p>
@@ -762,6 +778,7 @@ export function ObservationWorkspace() {
               <p className="field-help">
                 Spherical MCMF frame with authoritative Earth/Sun vectors and communication line. Registered Moon Trek / LROC imagery below.
               </p>
+              </details>
             </section>
             <section
               className={`workspace-card visual-card ${layoutMode === 'enlarge-local' ? 'visual-card-enlarged' : ''}`}
@@ -810,8 +827,29 @@ export function ObservationWorkspace() {
                 Marker distances are for display; terrain mesh shows local numerical geometry when available.
               </p>
             </section>
+            <section className="workspace-card site-inspector" id="site-inspector" aria-labelledby="site-inspector-heading">
+              <div className="card-heading">
+                <div><p className="eyebrow">SELECTED SITE</p><h2 id="site-inspector-heading">Site inspector</h2></div>
+                <span className="data-badge">{workflow === 'comparison' ? comparisonResult ? 'RECOMMENDED' : 'COMPARISON' : draft.horizonMode.toUpperCase()}</span>
+              </div>
+              {effectiveSite ? <>
+                <h3>{effectiveSite.name}</h3>
+                {activeCatalogSite && <p className="muted site-category">{activeCatalogSite.category.toUpperCase()} · {activeCatalogSite.id}</p>}
+                <dl className="inspector-values">
+                  <dt>Latitude</dt><dd>{effectiveSite.latitude}°</dd>
+                  <dt>Longitude east</dt><dd>{effectiveSite.longitude}°</dd>
+                  <dt>Surface elevation</dt><dd>{'surface_elevation_m' in effectiveSite ? `${effectiveSite.surface_elevation_m} m` : 'Available after observation'}</dd>
+                  <dt>Observer height</dt><dd>{'observer_height_m' in effectiveSite ? `${effectiveSite.observer_height_m} m` : `${draft.height} m requested`}</dd>
+                  <dt>Observation time</dt><dd>{inspectorTime}</dd>
+                  <dt>Sun / Earth</dt><dd>{selectedPoint ? `${selectedPoint.sun.visible ? 'Visible' : 'Not visible'} / ${selectedPoint.earth.visible ? 'Visible' : 'Not visible'}` : 'Not available for current result'}</dd>
+                  <dt>Golden state</dt><dd>{selectedPoint ? selectedPoint.is_golden_window ? 'Available' : 'Unavailable' : 'Not available for current result'}</dd>
+                </dl>
+                {activeCatalogSite && <div className="source-links"><SourceLink url={activeCatalogSite.source_url}>Site source ↗</SourceLink>{activeCatalogSite.quickmap_url && <SourceLink url={activeCatalogSite.quickmap_url}>QuickMap ↗</SourceLink>}</div>}
+              </> : <p className="muted">Choose a catalog site or enter custom coordinates to inspect its location.</p>}
+              {workflow === 'comparison' && comparisonResult && <p className="field-help">Recommendation metrics: {comparisonResult.ranked_scenarios[0].summary.sunlit_pct}% sunlight · {comparisonResult.ranked_scenarios[0].summary.earth_visible_pct}% Earth visibility · {comparisonResult.ranked_scenarios[0].summary.golden_pct}% golden time. Values are returned by the API.</p>}
+            </section>
           </div>
-          <div className="workstation-bottom">
+          <div className="workstation-bottom" id="workstation-results">
           {workflow === 'timeline' ? (
             timelineResult ? (
               <>
@@ -839,6 +877,12 @@ export function ObservationWorkspace() {
             <details><summary>Comparison provenance</summary><p>Ranking model {comparisonResult.meta.model_version} · {comparisonResult.meta.horizon_mode} · {comparisonResult.meta.time_resolution_minutes} minute samples · shared terrain dataset {comparisonResult.meta.terrain_dataset_id ?? 'multiple or none'}</p><h3>Scenario data provenance</h3><ul className="source-list">{comparisonResult.ranked_scenarios.map((scenario) => <li key={scenario.label}><strong>{scenario.label}</strong><p className="muted">Model {scenario.provenance.model_version} · terrain dataset {scenario.provenance.terrain_dataset_id ?? 'none'}</p><ul>{scenario.provenance.sources.map((source, index) => <li key={`${source.name}-${index}`}><SourceLink url={source.url}>{source.name}</SourceLink><p className="muted">Version {source.version ?? 'not reported'} · Retrieved {source.fetched_at}</p></li>)}</ul></li>)}</ul></details>
           </section>}
           <CSAResources />
+          <footer className="source-footer" aria-label="Data source attribution">
+            <span>DATA SOURCES</span>
+            {activeCatalogSite && <SourceLink url={activeCatalogSite.source_url}>{activeCatalogSite.name} catalog record</SourceLink>}
+            {mapLayers?.items.find((layer) => layer.id === 'LRO_WAC_Mosaic_Global_303ppd_v02') && <span>{mapLayers.items.find((layer) => layer.id === 'LRO_WAC_Mosaic_Global_303ppd_v02')?.attribution}</span>}
+            {workflow === 'timeline' ? timelineResult?.meta.sources.map((source) => <SourceLink key={source.url} url={source.url}>{source.name}</SourceLink>) : workflow === 'comparison' ? comparisonResult?.meta.sources.map((source) => <SourceLink key={source.url} url={source.url}>{source.name}</SourceLink>) : result?.meta.sources.map((source) => <SourceLink key={source.url} url={source.url}>{source.name}</SourceLink>)}
+          </footer>
           </div>
         </div>
       </div>

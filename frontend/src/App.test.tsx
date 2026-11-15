@@ -105,7 +105,7 @@ async function selectCatalog() {
   })
 }
 
-describe('Stage 5 observation workspace', () => {
+describe('Stage 6 workstation', () => {
   it('does not replace a failed layer catalog with static operational imagery', async () => {
     vi.mocked(apiClient.getMapLayers)
       .mockRejectedValueOnce(
@@ -129,7 +129,7 @@ describe('Stage 5 observation workspace', () => {
     expect(screen.getByTestId('app-title')).toHaveTextContent(
       'Lunar Landing Site Navigator',
     )
-    expect(screen.getByText('Stage 5')).toBeInTheDocument()
+    expect(screen.getByText('Stage 6')).toBeInTheDocument()
     expect(screen.getByText(/Sun visibility: Unknown/)).toBeInTheDocument()
     expect(screen.getByText('Simultaneous availability: Unknown')).toBeInTheDocument()
     expect(visual.scene.mock.lastCall![0]).toMatchObject({
@@ -140,16 +140,23 @@ describe('Stage 5 observation workspace', () => {
     expect(apiClient.submitNow).not.toHaveBeenCalled()
     await screen.findByText('No matching articles in the available feed.')
   })
-  it('submits a catalog ID with an explicit UTC timestamp and source links', async () => {
+  it('mounts the workstation rail, site inspector, global Moon, local preview, and source footer', async () => {
     render(<App />)
+    const rail = screen.getByRole('navigation', { name: 'Workstation panels' })
+    expect(within(rail).getByRole('link', { name: 'Global Moon view' })).toHaveAttribute('href', '#map-heading')
+    expect(within(rail).getByRole('link', { name: 'Local terrain preview' })).toHaveAttribute('href', '#scene-heading')
+    expect(screen.getByRole('heading', { name: 'Site inspector' })).toBeInTheDocument()
+    expect(screen.getByTestId('global-moon-viewport')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Local terrain inspector' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Data source attribution')).toBeInTheDocument()
+  })
+  it('submits a catalog ID with an explicit UTC timestamp and source links', async () => {
+    const { container } = render(<App />)
     await selectCatalog()
     expect(
       screen.getByRole('link', { name: /Official site source/ }),
     ).toHaveAttribute('href', catalog.items[0].source_url)
-    expect(screen.getByRole('link', { name: /QuickMap/ })).toHaveAttribute(
-      'href',
-      catalog.items[0].quickmap_url,
-    )
+    expect(within(container.querySelector('.grid-sidebar')!).getByRole('link', { name: /QuickMap/ })).toHaveAttribute('href', catalog.items[0].quickmap_url)
     fireEvent.click(screen.getByRole('button', { name: 'Request observation' }))
     await waitFor(() =>
       expect(apiClient.submitNow).toHaveBeenCalledWith(
@@ -355,6 +362,13 @@ describe('Stage 5 observation workspace', () => {
       await vi.advanceTimersByTimeAsync(2000)
     })
     expect(screen.getByText('Observation ready')).toBeInTheDocument()
+    const inspector = screen.getByRole('region', { name: 'Site inspector' })
+    expect(within(inspector).getByText('Synthetic development site')).toBeInTheDocument()
+    expect(within(inspector).getByText('-89.44°')).toBeInTheDocument()
+    expect(within(inspector).getByText('-137.9°')).toBeInTheDocument()
+    expect(within(inspector).getByText('0 m')).toBeInTheDocument()
+    expect(within(inspector).getByText('Visible / Visible')).toBeInTheDocument()
+    expect(within(inspector).getByText('Available')).toBeInTheDocument()
     const section = screen.getByRole('region', { name: 'Observation' })
     expect(within(section).getByText('cached')).toBeInTheDocument()
     expect(
@@ -389,7 +403,7 @@ describe('Stage 5 observation workspace', () => {
     fireEvent.change(screen.getByLabelText('Observer height (m)'), {
       target: { value: '3' },
     })
-    expect(screen.getByText('Synthetic development site')).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'Observation' })).getByText('Synthetic development site')).toBeInTheDocument()
     expect(screen.getByText(/Displayed result uses geometric mode/)).toBeInTheDocument()
     expect(screen.getByText(/Simultaneous availability:/)).toBeInTheDocument()
     expect(visual.scene.mock.lastCall![0]).toMatchObject({
@@ -478,9 +492,7 @@ describe('Stage 5 observation workspace', () => {
     })
     // Observation succeeds and renders despite CSA failure
     expect(screen.getByText('Observation ready')).toBeInTheDocument()
-    expect(
-      screen.getByText('Synthetic development site'),
-    ).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'Observation' })).getByText('Synthetic development site')).toBeInTheDocument()
     expect(screen.getByText('CSA feed unavailable')).toBeInTheDocument()
     expect(visual.map).toHaveBeenCalled()
     expect(visual.scene).toHaveBeenCalled()
