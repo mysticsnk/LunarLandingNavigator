@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
-from app.astronomy import ObservationPoint
+from app.astronomy.observation import ObservationPoint
 
 
 class ResolvedSite(BaseModel):
@@ -207,3 +207,37 @@ class TimelineResult(BaseModel):
                     f"{event} must represent only an observed visible-to-invisible transition"
                 )
         return self
+
+
+class RankedScenario(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    rank: int = Field(ge=1, le=6)
+    label: str = Field(min_length=1)
+    site: ResolvedSite
+    start_time: AwareDatetime
+    end_time: AwareDatetime
+    score: float = Field(ge=0, le=100)
+    summary: TimelineSummary
+
+
+class ComparisonResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ranking_version: Literal["v1"] = "v1"
+    ranked_scenarios: list[RankedScenario] = Field(min_length=2, max_length=6)
+    recommended_label: str = Field(min_length=1)
+    recommendation_reason: str = Field(min_length=1)
+    meta: Meta
+
+    @model_validator(mode="after")
+    def validate_comparison(self):
+        labels = [scenario.label for scenario in self.ranked_scenarios]
+        if len(labels) != len(set(labels)):
+            raise ValueError("Scenario labels must be unique")
+        if self.recommended_label != self.ranked_scenarios[0].label:
+            raise ValueError("recommended_label must match the first ranked scenario")
+        expected_ranks = list(range(1, len(self.ranked_scenarios) + 1))
+        actual_ranks = [s.rank for s in self.ranked_scenarios]
+        if actual_ranks != expected_ranks:
+            raise ValueError(f"Ranks must be 1 to {len(self.ranked_scenarios)}, got {actual_ranks}")
+        return self
+
