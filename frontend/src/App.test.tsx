@@ -20,6 +20,9 @@ import {
   succeeded,
   timelineAccepted,
   timelineResult,
+  comparisonAccepted,
+  comparisonResult,
+  comparisonSucceeded,
 } from './test/fixtures'
 import type { LunarMapProps } from './features/map'
 import type { LunarSceneProps } from './features/scene'
@@ -78,6 +81,8 @@ beforeEach(() => {
     ...timelineResult,
     summary: { ...timelineResult.summary, next_sunset_at: null, next_earthset_at: null },
   })
+  vi.spyOn(apiClient, 'submitComparison').mockResolvedValue(comparisonAccepted)
+  vi.spyOn(apiClient, 'getComparisonResult').mockResolvedValue(comparisonResult)
 })
 afterEach(() => {
   cleanup()
@@ -97,7 +102,7 @@ async function selectCatalog() {
   })
 }
 
-describe('Stage 4 observation workspace', () => {
+describe('Stage 5 observation workspace', () => {
   it('does not replace a failed layer catalog with static operational imagery', async () => {
     vi.mocked(apiClient.getMapLayers)
       .mockRejectedValueOnce(
@@ -121,7 +126,7 @@ describe('Stage 4 observation workspace', () => {
     expect(screen.getByTestId('app-title')).toHaveTextContent(
       'Lunar Landing Site Navigator',
     )
-    expect(screen.getByText('Stage 4')).toBeInTheDocument()
+    expect(screen.getByText('Stage 5')).toBeInTheDocument()
     expect(screen.getByText(/Sun visibility: Unknown/)).toBeInTheDocument()
     expect(screen.getByText('Simultaneous availability: Unknown')).toBeInTheDocument()
     expect(visual.scene.mock.lastCall![0]).toMatchObject({
@@ -201,6 +206,68 @@ describe('Stage 4 observation workspace', () => {
     expect(visual.scene.mock.lastCall![0].observationPoint).toEqual(timelineResult.points[1])
     expect(apiClient.submitTimeline).toHaveBeenCalledTimes(1)
     expect(apiClient.submitNow).not.toHaveBeenCalled()
+  })
+  it('builds a mixed catalog/custom comparison, preserves backend ranking, and opens its frozen timeline request', async () => {
+    vi.mocked(apiClient.getJob).mockResolvedValueOnce(comparisonSucceeded)
+    vi.mocked(apiClient.getComparisonResult).mockResolvedValueOnce({
+      ...comparisonResult,
+      ranked_scenarios: comparisonResult.ranked_scenarios.map((item, index) => ({ ...item, score: index === 0 ? 67.54 : 67.53 })),
+    })
+    render(<App />)
+    await screen.findByRole('option', { name: 'Synthetic catalog site' })
+    fireEvent.click(screen.getByRole('radio', { name: 'Compare scenarios' }))
+    fireEvent.change(screen.getByLabelText('Scenario 1 label'), { target: { value: 'Synthetic A' } })
+    fireEvent.change(screen.getByLabelText('Scenario 1 site'), { target: { value: 'development-site' } })
+    fireEvent.change(screen.getByLabelText('Scenario 1 start time'), { target: { value: '2027-07-15T00:00:00' } })
+    fireEvent.click(within(screen.getByLabelText('Scenario 2 label').closest('.comparison-scenario')!).getByRole('radio', { name: 'Custom' }))
+    fireEvent.change(screen.getByLabelText('Scenario 2 label'), { target: { value: 'Synthetic B' } })
+    fireEvent.change(screen.getByLabelText('Scenario 2 latitude'), { target: { value: '-87.45' } })
+    fireEvent.change(screen.getByLabelText('Scenario 2 longitude'), { target: { value: '77' } })
+    fireEvent.change(screen.getByLabelText('Scenario 2 start time'), { target: { value: '2027-07-15T00:00:00' } })
+    fireEvent.change(screen.getByLabelText('Duration (days)'), { target: { value: '1' } })
+    fireEvent.change(screen.getByLabelText('Time step (minutes)'), { target: { value: '360' } })
+    fireEvent.change(screen.getByLabelText('Observer height (m)'), { target: { value: '4' } })
+    fireEvent.change(screen.getByLabelText('Visibility margin (°)'), { target: { value: '0.5' } })
+    vi.useFakeTimers()
+    fireEvent.click(screen.getByRole('button', { name: 'Compare scenarios' }))
+    expect(apiClient.submitComparison).toHaveBeenCalledWith({
+      scenarios: [
+        { label: 'Synthetic A', site: { site_id: 'development-site' }, start_time: '2027-07-15T00:00:00Z' },
+        { label: 'Synthetic B', site: { latitude: -87.45, longitude: 77 }, start_time: '2027-07-15T00:00:00Z' },
+      ], duration_days: 1, step_minutes: 360, horizon_mode: 'geometric', observer_height_m: 4, visibility_margin_deg: 0.5,
+    }, expect.any(Object))
+    await act(async () => vi.advanceTimersByTimeAsync(2000))
+    const results = screen.getByRole('region', { name: 'Comparison results' })
+    expect(within(results).getByText('Synthetic A')).toBeInTheDocument()
+    expect(within(results).getAllByText('67.5')).toHaveLength(2)
+    const rows = within(results).getAllByRole('row')
+    expect(rows[1]).toHaveTextContent('1')
+    expect(rows[1]).toHaveTextContent('Synthetic A')
+    expect(rows[2]).toHaveTextContent('2')
+    expect(rows[2]).toHaveTextContent('Synthetic B')
+    expect(within(results).getByText(/40% sunlight.*30% Earth visibility.*30% golden-window/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Global Moon view' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Local terrain inspector' })).toBeInTheDocument()
+    expect(screen.getByText('No matching articles in the available feed.')).toBeInTheDocument()
+    fireEvent.click(within(results).getAllByRole('button', { name: 'Open timeline' })[0])
+    expect(apiClient.submitTimeline).toHaveBeenLastCalledWith({
+      site: { site_id: 'development-site' }, start_time: '2027-07-15T00:00:00Z', duration_days: 1,
+      step_minutes: 360, horizon_mode: 'geometric', observer_height_m: 4, visibility_margin_deg: 0.5,
+    }, expect.any(Object))
+    expect(screen.getByRole('region', { name: 'Comparison results' })).toBeInTheDocument()
+  })
+  it('enforces the 2–6 scenario range and unique labels before any request', async () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('radio', { name: 'Compare scenarios' }))
+    expect(screen.getByText('Scenarios (2/6)')).toBeInTheDocument()
+    for (let i = 0; i < 4; i++) fireEvent.click(screen.getByRole('button', { name: 'Add scenario' }))
+    expect(screen.getByText('Scenarios (6/6)')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add scenario' })).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('Scenario 1 label'), { target: { value: 'Same' } })
+    fireEvent.change(screen.getByLabelText('Scenario 2 label'), { target: { value: 'same' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Compare scenarios' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Scenario labels must be unique')
+    expect(apiClient.submitComparison).not.toHaveBeenCalled()
   })
   it('submits custom coordinates without a catalog ID and never clamps invalid latitude', async () => {
     render(<App />)
