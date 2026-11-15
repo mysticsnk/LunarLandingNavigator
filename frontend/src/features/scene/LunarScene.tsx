@@ -515,10 +515,9 @@ export const LunarScene: React.FC<LunarSceneProps> = (props) => {
           }}
         >
           <span>
-            No numerical terrain DEM loaded for this site. Displaying geometric horizon reference.
-          </span>
-          <span style={{ fontSize: '0.62rem', color: '#6a6e82' }}>
-            DEM available for Shackleton Connecting Ridge
+            {horizonMode === 'terrain'
+              ? 'No display heightmap loaded. Terrain visibility remains API-provided.'
+              : 'No display heightmap loaded. The geometric reference plane is for visualization only.'}
           </span>
         </div>
       )}

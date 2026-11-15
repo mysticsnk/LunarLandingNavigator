@@ -423,8 +423,18 @@ describe('LunarScene component and coordinate orientation', () => {
 
       expect(screen.getByTestId('terrain-unavailable-notice')).toBeInTheDocument()
       expect(
-        screen.getByText(/No numerical terrain DEM loaded for this site/i),
+        screen.getByText(/No display heightmap loaded/i),
       ).toBeInTheDocument()
+      expect(screen.queryByText(/DEM available for Shackleton/i)).not.toBeInTheDocument()
+    })
+
+    it('does not describe missing terrain display data as a geometric fallback in terrain mode', () => {
+      render(<LunarScene horizonMode="terrain" observationPoint={null} heightmap={null} />)
+
+      expect(screen.getByTestId('terrain-unavailable-notice')).toHaveTextContent(
+        'Terrain visibility remains API-provided.',
+      )
+      expect(screen.queryByText(/Displaying geometric horizon reference/i)).not.toBeInTheDocument()
     })
   })
 })

@@ -736,42 +736,6 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
               </div>
 
               {/* Site Inspector Summary Panel matching Image 2 */}
-              <div className="site-inspector-grid" data-testid="site-inspector-panel">
-                <span className="site-inspector-label">
-                  <span aria-hidden="true">📍</span> Site
-                </span>
-                <span className="site-inspector-value">
-                  {effectiveSite ? `${effectiveSite.name} (active)` : (coordinate ? `${coordinate.latitude.toFixed(2)}°, ${coordinate.longitude.toFixed(2)}°` : '—')}
-                </span>
-
-                <span className="site-inspector-label">
-                  <span aria-hidden="true">☀️</span> Sun elevation
-                </span>
-                <span className="site-inspector-value">
-                  {selectedPoint ? `${selectedPoint.sun.elevation_deg.toFixed(1)}°` : '—'}
-                </span>
-
-                <span className="site-inspector-label">
-                  <span aria-hidden="true">🌐</span> Earth visibility
-                </span>
-                <span className="site-inspector-value" style={{ color: selectedPoint?.earth.visible ? '#00f0ff' : selectedPoint ? '#9da0a8' : undefined }}>
-                  {selectedPoint ? (selectedPoint.earth.visible ? 'Visible' : 'Blocked') : '—'}
-                </span>
-
-                <span className="site-inspector-label">
-                  <span aria-hidden="true">⛰️</span> Horizon mode
-                </span>
-                <span className="site-inspector-value">
-                  {((workflow === 'comparison' ? comparisonResult?.meta.horizon_mode : workflow === 'timeline' ? timelineResult?.meta.horizon_mode : result?.meta.horizon_mode) ?? draft.horizonMode) === 'terrain' ? 'Terrain' : 'Geometric'}
-                </span>
-
-                <span className="site-inspector-label">
-                  <span aria-hidden="true">⏱️</span> Source freshness
-                </span>
-                <span className="site-inspector-value">
-                  {(workflow === 'timeline' ? timelineResult?.meta.data_status : result?.meta.data_status) ?? '—'}
-                </span>
-              </div>
 
               <p className="muted">
                 Schematic local ENU scene · directions from the observation API.
@@ -804,11 +768,45 @@ export function ObservationWorkspace({ workflow, onWorkflowChange, onOpenCompari
             </section>
           </div>
           <section className="workspace-card observation-inspector" aria-label="Site inspector">
+            <div className="card-heading"><h2>Site inspector</h2></div>
+            {workflow !== 'now' && (
+              <div className="site-inspector-grid" data-testid="site-inspector-panel">
+                <span className="site-inspector-label">Site</span>
+                <span className="site-inspector-value">{effectiveSite?.name ?? (coordinate ? `${coordinate.latitude.toFixed(2)}°, ${coordinate.longitude.toFixed(2)}°` : 'No site selected')}</span>
+                <span className="site-inspector-label">Latitude</span>
+                <span className="site-inspector-value">{effectiveSite ? `${effectiveSite.latitude}°` : '—'}</span>
+                <span className="site-inspector-label">Longitude east</span>
+                <span className="site-inspector-value">{effectiveSite ? `${effectiveSite.longitude}°` : '—'}</span>
+                <span className="site-inspector-label">Sun elevation</span>
+                <span className="site-inspector-value">{selectedPoint ? `${selectedPoint.sun.elevation_deg.toFixed(1)}°` : '—'}</span>
+                <span className="site-inspector-label">Earth visibility</span>
+                <span className="site-inspector-value">{selectedPoint ? (selectedPoint.earth.visible ? 'Visible' : 'Not visible') : '—'}</span>
+                <span className="site-inspector-label">Horizon mode</span>
+                <span className="site-inspector-value">{((workflow === 'comparison' ? comparisonResult?.meta.horizon_mode : timelineResult?.meta.horizon_mode) ?? draft.horizonMode) === 'terrain' ? 'Terrain' : 'Geometric'}</span>
+                <span className="site-inspector-label">Data status</span>
+                <span className="site-inspector-value">{(workflow === 'timeline' ? timelineResult?.meta.data_status : comparisonResult?.meta.data_status) ?? '—'}</span>
+              </div>
+            )}
             {workflow === 'now'
               ? <ObservationResult result={result} request={observation.resultRequest} coverage={observation.resultCoverage} />
               : workflow === 'timeline'
-                ? <><div className="card-heading"><h2>Site inspector</h2>{timelineResult && <span className={`data-badge ${timelineResult.meta.data_status}`}>{timelineResult.meta.data_status}</span>}</div>{timelineResult && selectedPoint ? <><strong>{timelineResult.site.name}</strong><p className="muted">{selectedPoint.timestamp} UTC · {timelineResult.meta.horizon_mode} horizon</p><div className="inspector-values"><span>Sun elevation <b>{selectedPoint.sun.elevation_deg}°</b></span><span>Sun horizon <b>{selectedPoint.sun.horizon_elevation_deg}°</b></span><span>Sun visible <b>{selectedPoint.sun.visible ? 'Yes' : 'No'}</b></span><span>Earth elevation <b>{selectedPoint.earth.elevation_deg}°</b></span><span>Earth horizon <b>{selectedPoint.earth.horizon_elevation_deg}°</b></span><span>Earth visible <b>{selectedPoint.earth.visible ? 'Yes' : 'No'}</b></span></div></> : <p className="muted">Site and returned sample values appear here after timeline analysis.</p>}</>
-                : <><div className="card-heading"><h2>Comparison inspector</h2></div>{comparisonResult ? <p>{comparisonResult.recommended_label} · {comparisonResult.recommendation_reason}</p> : <p className="muted">Comparison results appear below after the job completes.</p>}</>}
+                ? <>
+                    {timelineResult && selectedPoint ? (
+                      <>
+                        <strong>{timelineResult.site.name}</strong>
+                        <p className="muted">{selectedPoint.timestamp} UTC · {timelineResult.meta.horizon_mode} horizon</p>
+                        <div className="inspector-values">
+                          <span>Sun elevation <b>{selectedPoint.sun.elevation_deg}°</b></span>
+                          <span>Sun horizon <b>{selectedPoint.sun.horizon_elevation_deg}°</b></span>
+                          <span>Sun visible <b>{selectedPoint.sun.visible ? 'Yes' : 'No'}</b></span>
+                          <span>Earth elevation <b>{selectedPoint.earth.elevation_deg}°</b></span>
+                          <span>Earth horizon <b>{selectedPoint.earth.horizon_elevation_deg}°</b></span>
+                          <span>Earth visible <b>{selectedPoint.earth.visible ? 'Yes' : 'No'}</b></span>
+                        </div>
+                      </>
+                    ) : <p className="muted">Site and returned sample values appear here after timeline analysis.</p>}
+                  </>
+                : <>{comparisonResult ? <p>{comparisonResult.recommended_label} · {comparisonResult.recommendation_reason}</p> : <p className="muted">Comparison results appear below after the job completes.</p>}</>}
           </section>
           <div className="workstation-bottom">
           {workflow === 'timeline' ? (

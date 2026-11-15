@@ -125,6 +125,7 @@ describe('Lunar Navigator workstation', () => {
   it('starts with unknown operational values and no fabricated directions', async () => {
     const { container } = render(<App />)
     expect(screen.getByTestId('app-title')).toHaveTextContent('LUNAR NAVIGATOR / WORKSTATION')
+    expect(screen.getByText('Stage 6')).toBeInTheDocument()
     expect(screen.queryByText('Stage 5')).not.toBeInTheDocument()
     expect(screen.getByText(/Sun visibility: Unknown/)).toBeInTheDocument()
     expect(screen.getByText('Simultaneous availability: Unknown')).toBeInTheDocument()
@@ -136,6 +137,20 @@ describe('Lunar Navigator workstation', () => {
     expect(apiClient.submitNow).not.toHaveBeenCalled()
     fireEvent.click(screen.getByText('CSA resources', { selector: 'summary' }))
     await screen.findByText('No matching articles in the available feed.')
+  })
+  it('mounts the desktop workstation panels and selected-site inspector', async () => {
+    render(<App />)
+    const rail = screen.getByRole('navigation', { name: 'Workstation sections' })
+    expect(within(rail).getByRole('button', { name: 'Global Moon layers' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Site inspector' })).toBeInTheDocument()
+    expect(screen.getByTestId('global-moon-viewport')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Local terrain inspector' })).toBeInTheDocument()
+    expect(screen.getByText('Horizons')).toBeInTheDocument()
+    expect(screen.getByText('Moon Trek')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Moon texture: NASA SVS/i })).toHaveAttribute(
+      'href',
+      'https://svs.gsfc.nasa.gov/4720/',
+    )
   })
   it('submits a catalog ID with an explicit UTC timestamp and source links', async () => {
     render(<App />)
@@ -364,12 +379,9 @@ describe('Lunar Navigator workstation', () => {
     expect(screen.getByText('Observation ready')).toBeInTheDocument()
     const section = screen.getByRole('region', { name: 'Observation' })
     expect(within(section).getByText('cached')).toBeInTheDocument()
-    expect(
-      within(section).getByText('Synthetic development site'),
-    ).toBeInTheDocument()
-    expect(
-      within(section).getByText(/-89.44° latitude, -137.9° east/),
-    ).toBeInTheDocument()
+    const inspector = screen.getByRole('region', { name: 'Site inspector' })
+    expect(within(inspector).getByText('Synthetic development site')).toBeInTheDocument()
+    expect(within(inspector).getByText(/-89.44° latitude, -137.9° east longitude/)).toBeInTheDocument()
     expect(
       within(section).getByText('2027-07-15T00:00:00Z (UTC)'),
     ).toBeInTheDocument()
@@ -488,7 +500,7 @@ describe('Lunar Navigator workstation', () => {
     // Observation succeeds and renders despite CSA failure
     expect(screen.getByText('Observation ready')).toBeInTheDocument()
     expect(
-      screen.getByText('Synthetic development site'),
+      within(screen.getByRole('region', { name: 'Site inspector' })).getByText('Synthetic development site'),
     ).toBeInTheDocument()
     expect(screen.getByText('CSA feed unavailable')).toBeInTheDocument()
     expect(visual.map).toHaveBeenCalled()

@@ -18,8 +18,7 @@ Key principles enforced:
 4. **Deliberate Far-Side Handling:** Markers on the back/far-side hemisphere are identified
    geometrically and rendered with subtle translucent opacity. Coordinates are never altered to
    force markers onto the visible hemisphere.
-5. **Zero External Texture Dependency:** Procedural canvas-based lunar textures prevent runtime
-   crashes caused by network failures or missing image files.
+5. **Bundled Global Texture:** The checked-in NASA color map is loaded locally, so globe rendering does not depend on an upstream image request. The map is display imagery, not terrain elevation or scientific calculation input.
 
 ---
 
@@ -107,14 +106,14 @@ Inspection of the initial workspace state shown in **Image 1** revealed five int
 3. **Unobserved Globe Illumination:**
    Before an observation is computed, `sunPos` is `null`. Without dedicated neutral studio lighting, standard `MeshStandardMaterial` rendered completely black against the dark background.
 4. **Coordinate Grid & Lunar Reference Markings:**
-   The initial procedural canvas lacked the full coordinate reference grid visible in Image 2. Parallels (N 60°, N 30°, 0°, S 30°, S 60°) and meridians (120° W, 60° W, 0°, 60° E, 120° E) with readable degree labels were added.
+   The initial procedural texture was schematic. It has been replaced with the complete NASA global color map; coordinate grid lines are not currently overlaid on the globe.
 5. **Secondary Panel Integration:**
    In Image 2, the right panel houses both the `Site Inspector` (live/cached metadata) and the `Local Terrain` preview (`LunarScene`). When no DEM is available, an explicit unavailable notice is displayed without replacing the global 3D Moon.
 
 ### 5.2 Resolution Implemented
 - In `App.css`, restored `.visual-grid { display: contents; }` so `.visual-card:first-child` occupies `grid-area: global` (dominant viewport) and `.visual-card:nth-child(2)` occupies `grid-area: local`.
 - In `GlobalMoonScene.tsx`, added neutral studio lighting (`ambientLight 0.65` + key directional light + fill light) active whenever `!sunPos`, switching seamlessly to the physical solar beam when ephemeris is available.
-- Added coordinate parallels and meridians to the offline procedural canvas texture with sRGB color space.
+- The global color imagery is packaged locally and rendered as sRGB; it is not used as elevation data.
 - Added `Focus Site` camera preset, selected site callout badge, and navigation instruction legend matching Image 2 (`CLICK: PIN | DRAG: ROTATE | SCROLL: ZOOM | DOUBLE-CLICK: RECENTER`).
 - In `ObservationWorkspace.tsx`, added `Site Inspector` summary metrics above `LunarScene`, and wrapped 2D map layers in a collapsible drawer.
 

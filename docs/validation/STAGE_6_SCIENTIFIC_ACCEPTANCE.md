@@ -1,10 +1,10 @@
 # Stage 6 Scientific Acceptance Report
 
-**Date:** 2026-11-15  
-**Role:** Scientific Acceptance Engineer  
-**Status:** ACCEPTED (Controlled Verification Suite)  
-**Contract Version:** API v1 (`contracts/openapi.v1.yaml`)  
-**Ranking Version:** v1  
+**Date:** 2026-11-15
+**Role:** Scientific Acceptance Engineer
+**Status:** ACCEPTED (as recorded by the controlled verification run; this integration turn repeats only the checks listed in its completion report)
+**Contract Version:** API v1 (`contracts/openapi.v1.yaml`)
+**Ranking Version:** v1
 
 ---
 
@@ -29,8 +29,8 @@ All numerical and physical presentations were verified against authoritative API
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **REF-01** | Single Observation | Shackleton Ridge (-89.44°, -137.9°) | `2027-07-15T12:00:00Z` | Geometric | H=2m, M=0° | Sun vis=true (el 1.25°), Earth vis=true (el 6.14°), Golden=true | **PASSED** |
 | **REF-02** | Single Observation | Shackleton Ridge (-89.44°, -137.9°) | `2027-07-15T12:00:00Z` | Terrain | Product 90, H=2m, M=0° | Sun vis=false (DEM horizon 1.76° > el 1.25°), Earth vis=false, Golden=false | **PASSED** |
-| **REF-03** | Timeline | Custom Shackleton (-89.44°, -137.9°) | `2027-07-15T00:00:00Z` + 1d | Geometric | Step=360m, 4 samples | Sunlit=75% (18h), Earth=75% (18h), Golden=50% (12h), Longest=6h, 2 windows | **PASSED** |
-| **REF-04** | Timeline | Faustini Rim A (-87.45°, 77.0°) | `2027-07-15T00:00:00Z` + 1d | Terrain | Product 90, Step=360m | Sunlit=0% (0h), Earth=0% (0h), Golden=0% (0h), Longest=0h, 0 windows | **PASSED** |
+| **REF-03** | Timeline | Custom Shackleton (-89.44°, -137.9°) | `2027-07-15T00:00:00Z` + 1d | Geometric | Step=360 min, 4 samples | Sunlit=75% (18h), Earth=75% (18h), Golden=50% (12h), Longest=6h, 2 windows | **PASSED** |
+| **REF-04** | Timeline | Faustini Rim A (-87.45°, 77.0°) | `2027-07-15T00:00:00Z` + 1d | Terrain | Product 90, Step=360 min | Sunlit=0% (0h), Earth=0% (0h), Golden=0% (0h), Longest=0h, 0 windows | **PASSED** |
 | **REF-05** | Comparison | Synthetic A vs Synthetic B | `2027-07-15T00:00:00Z` + 1d | Geometric | A: S=75, E=75, G=50; B: S=50, E=50, G=25 | Score A=67.5 (Rank 1), Score B=42.5 (Rank 2). Unrounded score ordering | **PASSED** |
 | **REF-06** | Comparison Tie (Window) | Short Window vs Long Window | `2027-07-15T00:00:00Z` + 1d | Geometric | Both score 65.0; Short=4h, Long=10h | Long Window ranks #1 based on longest golden window tie-breaker | **PASSED** |
 | **REF-07** | Comparison Tie (Order) | Scenario Alpha vs Scenario Beta | `2027-07-15T00:00:00Z` + 1d | Geometric | Both score 64.0; both longest=8h | Request input order preserved (Alpha #1, Beta #2). Equivalence stated | **PASSED** |
@@ -79,6 +79,8 @@ No mocked or decorative metrics (e.g. power generation in watts, antenna communi
 ---
 
 ## 5. Regression Test Results (Task 4)
+
+The results below are recorded from the acceptance run dated 2026-11-15. They are historical evidence and are not a claim that those commands were rerun during later integrations.
 
 - **Backend Test Suite**:
   - Command: `python -m pytest`

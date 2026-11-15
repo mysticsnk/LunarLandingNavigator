@@ -1,5 +1,5 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import {
@@ -22,131 +22,6 @@ const SOUTH_POLE_CAMERA_POS: [number, number, number] = [0.1, -6.5, 2.0]
 const NEAR_SIDE_CAMERA_POS: [number, number, number] = [7.0, 0.5, 0.0]
 const FAR_SIDE_CAMERA_POS: [number, number, number] = [-7.0, 0.5, 0.0]
 
-/**
- * Creates an offline, zero-network procedural lunar surface texture.
- * Ensures the scene never fails due to missing external image assets.
- */
-function createProceduralMoonTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas')
-  canvas.width = 1024
-  canvas.height = 512
-  const ctx = canvas.getContext('2d')
-
-  if (ctx) {
-    // Base lunar highland anorthosite gray
-    ctx.fillStyle = '#8f9299'
-    ctx.fillRect(0, 0, 1024, 512)
-
-    // Darker basaltic maria basins (Oceanus Procellarum, Mare Imbrium, Mare Tranquillitatis)
-    const maria = [
-      { x: 380, y: 190, r: 120, opacity: 0.45 }, // Oceanus Procellarum
-      { x: 470, y: 170, r: 85, opacity: 0.5 },  // Mare Imbrium
-      { x: 500, y: 220, r: 70, opacity: 0.4 },  // Mare Serenitatis
-      { x: 570, y: 240, r: 65, opacity: 0.45 }, // Mare Tranquillitatis
-      { x: 620, y: 230, r: 50, opacity: 0.35 }, // Mare Crisium
-      { x: 440, y: 310, r: 55, opacity: 0.35 }, // Mare Nubium
-    ]
-
-    for (const m of maria) {
-      const grad = ctx.createRadialGradient(m.x, m.y, 10, m.x, m.y, m.r)
-      grad.addColorStop(0, `rgba(45, 48, 56, ${m.opacity})`)
-      grad.addColorStop(0.7, `rgba(60, 64, 72, ${m.opacity * 0.7})`)
-      grad.addColorStop(1, 'rgba(143, 146, 153, 0)')
-      ctx.fillStyle = grad
-      ctx.beginPath()
-      ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2)
-      ctx.fill()
-    }
-
-    // Prominent rayed impact craters (Tycho, Copernicus, Kepler)
-    const craters = [
-      { x: 480, y: 360, r: 14, rays: 12, rayLen: 120 }, // Tycho
-      { x: 440, y: 210, r: 12, rays: 8, rayLen: 70 },   // Copernicus
-      { x: 410, y: 220, r: 8, rays: 6, rayLen: 45 },    // Kepler
-    ]
-
-    for (const c of craters) {
-      // Crater rim and bright floor
-      ctx.fillStyle = '#dcdfe6'
-      ctx.beginPath()
-      ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.strokeStyle = '#40434a'
-      ctx.lineWidth = 2
-      ctx.stroke()
-
-      // Radial ejecta rays
-      ctx.strokeStyle = 'rgba(235, 238, 245, 0.25)'
-      ctx.lineWidth = 1.5
-      for (let i = 0; i < c.rays; i++) {
-        const angle = (i * Math.PI * 2) / c.rays
-        ctx.beginPath()
-        ctx.moveTo(c.x, c.y)
-        ctx.lineTo(
-          c.x + Math.cos(angle) * c.rayLen,
-          c.y + Math.sin(angle) * c.rayLen,
-        )
-        ctx.stroke()
-      }
-    }
-
-    // Coordinate grid lines: Parallels (N 60°, N 30°, Equator 0°, S 30°, S 60°)
-    ctx.strokeStyle = 'rgba(120, 180, 240, 0.22)'
-    ctx.lineWidth = 1
-    const parallels = [
-      { lat: 60, y: 85, label: 'N 60°' },
-      { lat: 30, y: 171, label: 'N 30°' },
-      { lat: 0, y: 256, label: '0°' },
-      { lat: -30, y: 341, label: 'S 30°' },
-      { lat: -60, y: 427, label: 'S 60°' },
-    ]
-    for (const p of parallels) {
-      ctx.beginPath()
-      ctx.moveTo(0, p.y)
-      ctx.lineTo(1024, p.y)
-      ctx.stroke()
-    }
-
-    // Coordinate grid lines: Meridians (120° W, 60° W, Prime Meridian 0°, 60° E, 120° E)
-    const meridians = [
-      { lon: -120, x: 171, label: '120° W' },
-      { lon: -60, x: 341, label: '60° W' },
-      { lon: 0, x: 512, label: '0°' },
-      { lon: 60, x: 683, label: '60° E' },
-      { lon: 120, x: 853, label: '120° E' },
-    ]
-    for (const m of meridians) {
-      ctx.beginPath()
-      ctx.moveTo(m.x, 0)
-      ctx.lineTo(m.x, 512)
-      ctx.stroke()
-    }
-
-    // Coordinate text labels
-    ctx.font = '11px sans-serif'
-    ctx.fillStyle = 'rgba(180, 220, 255, 0.55)'
-    ctx.textAlign = 'center'
-    ctx.fillText('N 90°', 512, 16)
-    ctx.fillText('S 90°', 512, 502)
-    for (const p of parallels) {
-      ctx.textAlign = 'left'
-      ctx.fillText(p.label, 516, p.y - 4)
-    }
-    for (const m of meridians) {
-      if (m.lon !== 0) {
-        ctx.textAlign = 'center'
-        ctx.fillText(m.label, m.x, 272)
-      }
-    }
-  }
-
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.wrapS = THREE.RepeatWrapping
-  texture.wrapT = THREE.ClampToEdgeWrapping
-  texture.needsUpdate = true
-  texture.colorSpace = THREE.SRGBColorSpace
-  return texture
-}
 
 /**
  * Camera controller supporting orbit rotation, damping, and programmatic view presets.
@@ -365,7 +240,12 @@ const GlobalSceneContent: React.FC<SceneContentProps> = ({
   observationPoint,
   cameraPreset,
 }) => {
-  const moonTexture = useMemo(() => createProceduralMoonTexture(), [])
+  const sourceTexture = useLoader(THREE.TextureLoader, '/assets/lroc_color_2k.jpg')
+  const moonTexture = useMemo(() => {
+    const texture = sourceTexture.clone()
+    texture.colorSpace = THREE.SRGBColorSpace
+    return texture
+  }, [sourceTexture])
 
   // Selected site position in global scene coordinates
   const sitePos = useMemo(() => {

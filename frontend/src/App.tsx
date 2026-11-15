@@ -21,7 +21,7 @@ export function App() {
           <h1 className="app-title" data-testid="app-title">
             LUNAR NAVIGATOR <span>/ WORKSTATION</span>
           </h1>
-          {isDemoModeEnabled() && <span className="stage-badge">DESIGN PREVIEW</span>}
+          <span className="stage-badge">Stage 6</span>
         </div>
         <button className="header-compare" type="button" onClick={openComparison}>Compare sites</button>
         {isDemoModeEnabled() && (
@@ -36,6 +36,7 @@ export function App() {
         <SourceLink url="https://ssd.jpl.nasa.gov/horizons/">Horizons</SourceLink>
         <SourceLink url="https://trek.nasa.gov/moon/">Moon Trek</SourceLink>
         <SourceLink url="https://quickmap.lroc.asu.edu/">LROC</SourceLink>
+        <SourceLink url="https://svs.gsfc.nasa.gov/4720/">Moon texture: NASA SVS / LROC WAC and LDAM</SourceLink>
         <details className="csa-source-details"><summary>CSA resources</summary><CSAResources /></details>
         <span className="footer-contract">API v1 · UTC · Backend calculations</span>
       </footer>
