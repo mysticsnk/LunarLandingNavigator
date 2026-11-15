@@ -104,6 +104,8 @@ function createProceduralMoonTexture(): THREE.CanvasTexture {
   const texture = new THREE.CanvasTexture(canvas)
   texture.wrapS = THREE.RepeatWrapping
   texture.wrapT = THREE.ClampToEdgeWrapping
+  texture.needsUpdate = true
+  texture.colorSpace = THREE.SRGBColorSpace
   return texture
 }
 
@@ -391,27 +393,37 @@ const GlobalSceneContent: React.FC<SceneContentProps> = ({
     <>
       <CameraControls cameraTarget={cameraPreset} />
 
-      {/* Lighting: Ambient + Directional Sun */}
-      <ambientLight intensity={sunPos ? 0.25 : 0.6} color="#dbe2ef" />
-      {sunPos && (
-        <directionalLight
-          position={sunPos}
-          intensity={2.8}
-          color="#fff8e7"
-          castShadow
-        />
+      {/* Lighting: Neutral geographic lighting before observation, astronomical directional light after observation */}
+      {sunPos ? (
+        <>
+          <ambientLight intensity={0.25} color="#dbe2ef" />
+          <directionalLight
+            position={sunPos}
+            intensity={2.8}
+            color="#fff8e7"
+            castShadow
+          />
+        </>
+      ) : (
+        <>
+          {/* Neutral studio geographic lighting ensuring complete 3D sphere is visible before observation */}
+          <ambientLight intensity={0.65} color="#ffffff" />
+          <directionalLight position={[6, 4, 8]} intensity={1.6} color="#ffffff" />
+          <directionalLight position={[-6, -2, -6]} intensity={0.45} color="#90a0b8" />
+        </>
       )}
 
-      {/* Spherical Moon */}
+      {/* Spherical Moon with reliable visible fallback */}
       <mesh
         data-testid="global-moon-sphere"
         onClick={handleGlobeClick}
       >
         <sphereGeometry args={[MOON_RADIUS, 64, 64]} />
         <meshStandardMaterial
+          color="#9da0a8"
           map={moonTexture}
-          roughness={0.92}
-          metalness={0.04}
+          roughness={0.88}
+          metalness={0.03}
         />
       </mesh>
 
@@ -617,8 +629,23 @@ export const GlobalMoonScene: React.FC<GlobalMoonSceneProps> = ({
           )}
         </div>
 
-        {/* View Presets & Camera Reset (Task 1) */}
+        {/* View Presets & Camera Reset (Task 1 & 3) */}
         <div style={{ display: 'flex', gap: '5px' }}>
+          {activeCoord && (
+            <button
+              type="button"
+              className="secondary-button"
+              style={{ padding: '2px 6px', fontSize: '0.7rem' }}
+              onClick={() => {
+                const p = latLonToGlobalScene(activeCoord, MOON_RADIUS * 2.8)
+                setCameraPreset([p.x, p.y, p.z])
+              }}
+              title="Focus camera on selected landing site"
+              data-testid="focus-site-btn"
+            >
+              Focus Site
+            </button>
+          )}
           <button
             type="button"
             className="secondary-button"

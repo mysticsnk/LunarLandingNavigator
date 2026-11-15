@@ -85,6 +85,24 @@ describe('Stage 5 GlobalMoonScene Component', () => {
       fireEvent.click(screen.getByRole('button', { name: 'South Pole' }))
     })
 
+    it('renders focus site button and triggers focus when site is selected', () => {
+      render(<GlobalMoonScene selectedSite={mockSites[0]} />)
+      const focusBtn = screen.getByTestId('focus-site-btn')
+      expect(focusBtn).toBeInTheDocument()
+      fireEvent.click(focusBtn)
+    })
+
+    it('remains visible in neutral geographic presentation before an observation completes', () => {
+      render(<GlobalMoonScene observationPoint={null} />)
+      expect(screen.getByTestId('global-moon-canvas')).toBeInTheDocument()
+      expect(screen.getByTestId('global-link-status')).toHaveTextContent(
+        /Link: Awaiting observation/i,
+      )
+      // Astronomical representations are not displayed
+      expect(screen.queryByTestId('global-sun-representation')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('global-earth-representation')).not.toBeInTheDocument()
+    })
+
     it('displays loading overlay when isLoading is true', () => {
       render(<GlobalMoonScene isLoading={true} />)
       expect(screen.getByTestId('global-scene-loading')).toBeInTheDocument()

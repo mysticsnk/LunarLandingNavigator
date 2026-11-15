@@ -412,5 +412,13 @@ describe('LunarScene component and coordinate orientation', () => {
         /Earth: Az 0.0° · El 3.0° \(Hrz 4.1°\) \(Not visible\)/,
       )
     })
+
+    it('displays explicit unavailable notice when no numerical terrain DEM exists', () => {
+      render(<LunarScene heightmap={null} />)
+      expect(screen.getByTestId('terrain-unavailable-notice')).toBeInTheDocument()
+      expect(
+        screen.getByText(/No numerical terrain DEM loaded for this site/i),
+      ).toBeInTheDocument()
+    })
   })
 })

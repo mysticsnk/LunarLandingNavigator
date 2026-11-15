@@ -743,21 +743,26 @@ export function ObservationWorkspace() {
                 </button>
               )}
               {!!mapLayers?.items.length && (
-                <div style={{ marginTop: '8px' }}>
-                  <LunarMap
-                    layers={mapLayers.items}
-                    quickmapUrl={activeCatalogSite?.quickmap_url ?? null}
-                    selectedCoordinate={coordinate || null}
-                    selectedSiteId={displayedSite?.site_id ?? (draft.mode === 'catalog' ? draft.site?.id : null)}
-                    onSelectCoordinate={(value) =>
-                      change({
-                        mode: 'custom',
-                        latitude: String(value.latitude),
-                        longitude: String(value.longitude),
-                      })
-                    }
-                  />
-                </div>
+                <details className="layer-map-drawer" style={{ marginTop: '8px' }}>
+                  <summary style={{ cursor: 'pointer', fontSize: '0.75rem', color: '#a0a5b5', padding: '4px 0' }}>
+                    2D Projections & Map Layers (LROC / Moon Trek)
+                  </summary>
+                  <div style={{ marginTop: '6px' }}>
+                    <LunarMap
+                      layers={mapLayers.items}
+                      quickmapUrl={activeCatalogSite?.quickmap_url ?? null}
+                      selectedCoordinate={coordinate || null}
+                      selectedSiteId={displayedSite?.site_id ?? (draft.mode === 'catalog' ? draft.site?.id : null)}
+                      onSelectCoordinate={(value) =>
+                        change({
+                          mode: 'custom',
+                          latitude: String(value.latitude),
+                          longitude: String(value.longitude),
+                        })
+                      }
+                    />
+                  </div>
+                </details>
               )}
               <p className="field-help">
                 Spherical MCMF frame with authoritative Earth/Sun vectors and communication line. Registered Moon Trek / LROC imagery below.
